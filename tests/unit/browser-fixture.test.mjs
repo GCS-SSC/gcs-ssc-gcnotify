@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apiKey, templateId, alternateTemplateId, fixtureFetch } from '../fixtures/gcnotify-fetch.mjs'
+import { loadNotificationExamples } from '../../scripts/notification-documentation.ts'
 const origin = 'https://api.notification.canada.ca'
 const auth = { Authorization: `ApiKey-v1 ${apiKey}` }
 const dirs = []
@@ -22,8 +23,8 @@ describe('managed browser transport fixture', () => {
     const fetcher = fixtureFetch(vi.fn())
     expect((await (await fetcher(`${origin}/v2/templates?type=email`, { headers: auth })).json()).templates[0].id).toBe(templateId)
     expect((await (await fetcher(`${origin}/v2/template/${alternateTemplateId}`, { headers: auth })).json()).name).toBe('Alternate approval / Autre approbation')
-    expect(Object.keys((await (await fetcher(`${origin}/v2/template/${templateId}`, { headers: auth })).json()).personalisation)).toEqual(['recipient', 'reference', 'link', 'date_en', 'date_fr', 'time_en', 'time_fr', 'agency_en', 'agency_fr', 'program_en', 'program_fr', 'stream_en', 'stream_fr', 'agreement', 'assigned_name', 'assigned_email'])
-    expect(Object.keys((await (await fetcher(`${origin}/v2/template/${alternateTemplateId}`, { headers: auth })).json()).personalisation)).toEqual(['recipient', 'reference', 'link'])
+    expect(Object.keys((await (await fetcher(`${origin}/v2/template/${templateId}`, { headers: auth })).json()).personalisation)).toEqual(Object.keys(loadNotificationExamples().A.config.mappings[0].personalisation))
+    expect(Object.keys((await (await fetcher(`${origin}/v2/template/${alternateTemplateId}`, { headers: auth })).json()).personalisation)).toEqual(Object.keys(loadNotificationExamples().B.config.mappings[0].personalisation))
     const personalisation = { recipient: 'Synthetic', reference: 'TEST', link: 'https://example.ca/en/home', date_en: 'Oct 26, 2026', date_fr: '27 oct. 2026', time_en: '1:30:00 AM', time_fr: '01:30:00', agency_en: 'Synthetic agency', agency_fr: 'Organisme synthétique', program_en: 'Synthetic program', program_fr: 'Programme synthétique', stream_en: 'Synthetic Stream', stream_fr: 'Volet synthétique', agreement: 'TEST-123', assigned_name: 'Synthetic', assigned_email: 'synthetic@example.ca' }
     const body = { email_address: 'synthetic@example.ca', template_id: templateId, reference: 'gcs-ssc:test', personalisation: { ...personalisation, ignored: 'must not be logged' }, ignored: 'must not be logged' }
     expect((await fetcher(`${origin}/v2/notifications/email`, { method: 'POST', headers: auth, body: JSON.stringify({ ...body, personalisation: { recipient: 'Synthetic', reference: 'TEST', link: 'https://example.ca' } }) })).status).toBe(400)

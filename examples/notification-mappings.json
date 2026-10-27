@@ -1,0 +1,93 @@
+{
+  "extensionKey": "gcs-ssc-gcnotify",
+  "A": {
+    "name": "Approval required / Approbation requise",
+    "config": {
+      "mappings": [
+        {
+          "templateId": "33333333-3333-4333-8333-333333333333",
+          "notifierId": "approval.action_required",
+          "recipientEmail": "recipient_email",
+          "personalisation": {
+            "recipient": {
+              "fieldId": "recipient_name",
+              "locale": "en"
+            },
+            "reference": "item_reference",
+            "link": "approval_url",
+            "date_en": {
+              "fieldId": "today_date",
+              "timeZone": "UTC",
+              "locale": "en"
+            },
+            "date_fr": {
+              "fieldId": "today_date",
+              "timeZone": "America/Toronto",
+              "locale": "fr"
+            },
+            "time_en": {
+              "fieldId": "current_time",
+              "timeZone": "UTC",
+              "locale": "en"
+            },
+            "time_fr": {
+              "fieldId": "current_time",
+              "timeZone": "America/Toronto",
+              "locale": "fr"
+            },
+            "agency_en": {
+              "fieldId": "agency_name",
+              "locale": "en"
+            },
+            "agency_fr": {
+              "fieldId": "agency_name",
+              "locale": "fr"
+            },
+            "program_en": {
+              "fieldId": "program_name",
+              "locale": "en"
+            },
+            "program_fr": {
+              "fieldId": "program_name",
+              "locale": "fr"
+            },
+            "stream_en": {
+              "fieldId": "stream_name",
+              "locale": "en"
+            },
+            "stream_fr": {
+              "fieldId": "stream_name",
+              "locale": "fr"
+            },
+            "agreement": "agreement_number",
+            "assigned_name": {
+              "fieldId": "recipient_name",
+              "locale": "fr"
+            },
+            "assigned_email": "recipient_email"
+          }
+        }
+      ]
+    }
+  },
+  "B": {
+    "name": "Alternate approval / Autre approbation",
+    "config": {
+      "mappings": [
+        {
+          "templateId": "55555555-5555-4555-8555-555555555555",
+          "notifierId": "approval.action_required",
+          "recipientEmail": "recipient_email",
+          "personalisation": {
+            "recipient": {
+              "fieldId": "recipient_name",
+              "locale": "en"
+            },
+            "reference": "item_title",
+            "link": "approval_url"
+          }
+        }
+      ]
+    }
+  }
+}

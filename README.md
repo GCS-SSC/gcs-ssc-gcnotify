@@ -49,19 +49,25 @@ Unit tests exercise the real SDK entrypoints, extension editor/catalog, API requ
 
 `tests/fixtures/gcnotify-fetch.mjs` is a managed-browser transport fixture. Run an isolated host browser journey with `NODE_OPTIONS=--import=/absolute/path/to/tests/fixtures/gcnotify-fetch.mjs`. The fixture activates only for the host's `.output/server/index.mjs`, delegates unrelated requests, and rejects unexpected GC Notify operations.
 
-Template A, **Approval required / Approbation requise**, requires all 16 placeholders below. Template B, **Alternate approval / Autre approbation**, requires only `recipient`, `reference`, and `link`.
+Choose the required recipient email field explicitly. For an unclaimed group approval, the canonical assigned-approver field resolves to the group mailbox. For a user assignment or claimed group approval, it resolves to that user. Choose a language for each approver-name binding.
 
-Choose `recipient_email`, labelled **Assigned approver email**, for the required `recipientEmail` mapping. That choice determines the destination address independently of the `recipient` content placeholder. For an unclaimed group approval, the field resolves to the assigned group mailbox. For a user assignment or claimed group approval, it resolves to that user's email. `recipient_name` supplies the group's name in the selected language or the assigned user's name. Map the template placeholders as follows:
+<!-- notification-mapping-examples:start -->
+
+This example block is generated from `examples/notification-mappings.json`. Run `bun scripts/check-notification-examples.ts --write` to update it.
+
+### Template A: Approval required / Approbation requise
+
+Template ID: `33333333-3333-4333-8333-333333333333`. Host notifier: `approval.action_required`. Required recipient field: `recipient_email`.
 
 | Placeholder | Host field | Explicit language | Explicit time zone |
 | --- | --- | --- | --- |
 | `recipient` | `recipient_name` | English | Not used |
 | `reference` | `item_reference` | Not used | Not used |
 | `link` | `approval_url` | Not used | Not used |
-| `date_en` | `today_date` | English | `America/Toronto` |
-| `date_fr` | `today_date` | Français | `UTC` |
-| `time_en` | `current_time` | English | `America/Toronto` |
-| `time_fr` | `current_time` | Français | `UTC` |
+| `date_en` | `today_date` | English | `UTC` |
+| `date_fr` | `today_date` | Français | `America/Toronto` |
+| `time_en` | `current_time` | English | `UTC` |
+| `time_fr` | `current_time` | Français | `America/Toronto` |
 | `agency_en` | `agency_name` | English | Not used |
 | `agency_fr` | `agency_name` | Français | Not used |
 | `program_en` | `program_name` | English | Not used |
@@ -71,6 +77,17 @@ Choose `recipient_email`, labelled **Assigned approver email**, for the required
 | `agreement` | `agreement_number` | Not used | Not used |
 | `assigned_name` | `recipient_name` | Français | Not used |
 | `assigned_email` | `recipient_email` | Not used | Not used |
+
+### Template B: Alternate approval / Autre approbation
+
+Template ID: `55555555-5555-4555-8555-555555555555`. Host notifier: `approval.action_required`. Required recipient field: `recipient_email`.
+
+| Placeholder | Host field | Explicit language | Explicit time zone |
+| --- | --- | --- | --- |
+| `recipient` | `recipient_name` | English | Not used |
+| `reference` | `item_title` | Not used | Not used |
+| `link` | `approval_url` | Not used | Not used |
+<!-- notification-mapping-examples:end -->
 
 `assigned_name` and `assigned_email` are fixture template placeholders, not additional host fields.
 
