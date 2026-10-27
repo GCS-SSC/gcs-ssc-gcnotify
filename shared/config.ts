@@ -2,10 +2,15 @@ import { z } from 'zod'
 
 export const EXTENSION_KEY = 'gcs-ssc-gcnotify'
 export const CREDENTIAL_SECRET_KEY = 'api-key'
+export const isValidTimeZone = (value: string): boolean => {
+  if (/^[+-]/.test(value)) return false
+  try { new Intl.DateTimeFormat('en', { timeZone: value }); return true } catch { return false }
+}
+export const FieldMappingSchema = z.union([z.string().min(1).max(128), z.object({ fieldId: z.string().min(1).max(128), timeZone: z.string().max(128) }).strict()])
 export const StreamMappingSchema = z.object({
   templateId: z.uuid(),
   notifierId: z.string().trim().min(1).max(128),
-  personalisation: z.record(z.string().min(1).max(512), z.string().min(1).max(128))
+  personalisation: z.record(z.string().min(1).max(512), FieldMappingSchema)
 }).strict()
 export const AgencyConfigSchema = z.object({}).strict()
 export const StreamConfigSchema = z.object({ mappings: z.array(StreamMappingSchema).default([]) }).strict().superRefine((value, context) => {

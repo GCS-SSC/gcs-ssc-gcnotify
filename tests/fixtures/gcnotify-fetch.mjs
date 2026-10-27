@@ -8,8 +8,9 @@ const syntheticKeyId = '22222222-2222-4222-8222-222222222222'
 export const apiKey = ['gcntfy', 'browser-fixture', syntheticServiceId, syntheticKeyId].join('-')
 export const templateId = '33333333-3333-4333-8333-333333333333'
 export const alternateTemplateId = '55555555-5555-4555-8555-555555555555'
-const template = { id: templateId, name: 'Approval required / Approbation requise', type: 'email', personalisation: { recipient: { required: true }, reference: { required: true }, link: { required: true } } }
-const alternateTemplate = { ...template, id: alternateTemplateId, name: 'Alternate approval / Autre approbation' }
+const basicPersonalisation = { recipient: { required: true }, reference: { required: true }, link: { required: true } }
+const template = { id: templateId, name: 'Approval required / Approbation requise', type: 'email', personalisation: { ...basicPersonalisation, ...Object.fromEntries(['date_toronto', 'date_utc', 'time_utc', 'agency', 'stream', 'agreement', 'assigned_name', 'assigned_email'].map(name => [name, { required: true }])) } }
+const alternateTemplate = { ...template, id: alternateTemplateId, name: 'Alternate approval / Autre approbation', personalisation: basicPersonalisation }
 const templates = [template, alternateTemplate]
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } })
 export const fixtureFetch = original => {
@@ -31,11 +32,13 @@ export const fixtureFetch = original => {
     }
     if (method === 'POST' && url.pathname === '/v2/notifications/email') {
       const body = JSON.parse(options?.body ?? (input instanceof Request ? await input.text() : '{}'))
-      if (!body || typeof body.email_address !== 'string' || !body.email_address.includes('@') || !templates.some(item => item.id === body.template_id) || typeof body.reference !== 'string' || !body.reference || !body.personalisation || ['recipient', 'reference', 'link'].some(name => typeof body.personalisation[name] !== 'string')) return json({ errors: [{ message: 'Invalid fixture email payload' }] }, 400)
+      const selectedTemplate = templates.find(item => item.id === body?.template_id)
+      const required = Object.keys(selectedTemplate?.personalisation ?? {})
+      if (!body || typeof body.email_address !== 'string' || !body.email_address.includes('@') || !selectedTemplate || typeof body.reference !== 'string' || !body.reference || !body.personalisation || required.some(name => typeof body.personalisation[name] !== 'string')) return json({ errors: [{ message: 'Invalid fixture email payload' }] }, 400)
       const tracePath = process.env.GCS_E2E_NOTIFICATION_TRACE
       if (!tracePath) throw new Error('GC Notify send fixture requires an isolated trace path')
       const notificationId = randomUUID()
-      const payload = { email_address: body.email_address, template_id: body.template_id, reference: body.reference, personalisation: { recipient: body.personalisation.recipient, reference: body.personalisation.reference, link: body.personalisation.link } }
+      const payload = { email_address: body.email_address, template_id: body.template_id, reference: body.reference, personalisation: Object.fromEntries(required.map(name => [name, body.personalisation[name]])) }
       appendFileSync(tracePath, `${JSON.stringify({ method, path: url.pathname, body: payload, notificationId })}\n`, { mode: 0o600 })
       accepted.set(body.reference, { id: notificationId, reference: body.reference })
       return json({ id: notificationId, reference: body.reference }, 201)

@@ -22,7 +22,7 @@ const auth = { lockAuthState: vi.fn(), authorizeCurrentEntity: vi.fn(), authoriz
 const context = (body: unknown = { apiKey }): GcsExtensionRouteContext => ({ params: { agencyId: '17' }, db: { transaction: () => ({ execute: async (callback: (value: unknown) => Promise<unknown>) => await callback(trx) }) }, readBody: async () => body, writeAuthorization: auth }) as unknown as GcsExtensionRouteContext
 const streamScope = { type: 'entity' as const, agencyId: '17', path: [{ type: 'transfer_payment', id: '10' }, { type: 'transfer_payment_stream', id: '118' }] }
 const streamRequest = (): GcsExtensionRouteContext => { const request = context(); request.params = { streamId: '118', agencyId: '999' }; request.stream = { streamId: '118', agencyId: '17' }; request.authorizedScope = streamScope; return request }
-const guardContext = (config: unknown = { mappings: [{ templateId, notifierId: 'approval.action_required', personalisation: { name: 'recipient_name' } }] }): GcsExtensionConfigurationGuardContext => ({ extensionKey: EXTENSION_KEY, targetExtensionKey: EXTENSION_KEY, scope: 'stream', agencyId: '17', streamId: '118', enabled: true, config, db: {}, event: {}, notificationNotifiers: [{ id: 'approval.action_required', name: { en: 'Approval', fr: 'Approbation' }, fields: [{ id: 'recipient_name', name: { en: 'Name', fr: 'Nom' } }] }] }) as unknown as GcsExtensionConfigurationGuardContext
+const guardContext = (config: unknown = { mappings: [{ templateId, notifierId: 'approval.action_required', personalisation: { name: 'recipient_name' } }] }): GcsExtensionConfigurationGuardContext => ({ extensionKey: EXTENSION_KEY, targetExtensionKey: EXTENSION_KEY, scope: 'stream', agencyId: '17', streamId: '118', enabled: true, config, db: {}, event: {}, notificationNotifiers: [{ id: 'approval.action_required', name: { en: 'Approval', fr: 'Approbation' }, fields: [{ id: 'recipient_name', name: { en: 'Name', fr: 'Nom' }, type: 'text', group: { id: 'approval', name: { en: 'Approval', fr: 'Approbation' } } }] }] }) as unknown as GcsExtensionConfigurationGuardContext
 beforeEach(() => {
   vi.clearAllMocks()
   sdk.stream.mockResolvedValue({ agencyId: '17', streamId: '118', scope: streamScope }); sdk.get.mockResolvedValue({ apiKey }); sdk.set.mockResolvedValue({ id: '1' }); query.executeTakeFirst.mockResolvedValue({ enabled: true })
@@ -88,9 +88,19 @@ describe('configuration save guard', () => {
     await expect(validateConfiguration({ ...request, notificationNotifiers: [] })).rejects.toMatchObject({ details: [{ path: 'mappings.0.notifierId' }] })
     await expect(validateConfiguration(guardContext({ mappings: [{ templateId, notifierId: 'approval.action_required', personalisation: { name: 'unknown' } }] }))).rejects.toMatchObject({ details: [{ path: 'mappings.0.personalisation.name' }] })
     expect(fetch).not.toHaveBeenCalled()
-    const custom = { id: 'other.host.notifier', name: { en: 'Other', fr: 'Autre' }, fields: [{ id: 'custom_host_value', name: { en: 'Custom', fr: 'Personnalisé' } }] }
+    const custom = { id: 'other.host.notifier', name: { en: 'Other', fr: 'Autre' }, fields: [{ id: 'custom_host_value', name: { en: 'Custom', fr: 'Personnalisé' }, type: 'text' as const, group: { id: 'custom', name: { en: 'Custom', fr: 'Personnalisé' } } }] }
     await expect(validateConfiguration({ ...guardContext({ mappings: [{ templateId, notifierId: custom.id, personalisation: { name: 'custom_host_value' } }] }), notificationNotifiers: [custom] })).resolves.toBeUndefined()
     await expect(validateConfiguration({ ...guardContext(), scope: 'agency', streamId: undefined })).rejects.toMatchObject({ code: 'GCS_GCNOTIFY_INVALID' })
+  })
+  it('requires valid explicit time zones only for date and time host fields', async () => {
+    const notifier = { id: 'approval.action_required', name: { en: 'Approval', fr: 'Approbation' }, fields: [{ id: 'date_value', name: { en: 'Date', fr: 'Date' }, type: 'date' as const, group: { id: 'system', name: { en: 'System', fr: 'Système' } } }] }
+    const request = (value: unknown) => ({ ...guardContext({ mappings: [{ templateId, notifierId: notifier.id, personalisation: { name: value } }] }), notificationNotifiers: [notifier] })
+    await expect(validateConfiguration(request('date_value'))).rejects.toMatchObject({ details: [{ path: 'mappings.0.personalisation.name.timeZone' }] })
+    await expect(validateConfiguration(request({ fieldId: 'date_value', timeZone: 'Invalid/Zone' }))).rejects.toMatchObject({ details: [{ path: 'mappings.0.personalisation.name.timeZone' }] })
+    await expect(validateConfiguration(request({ fieldId: 'date_value', timeZone: '+01:00' }))).rejects.toMatchObject({ details: [{ path: 'mappings.0.personalisation.name.timeZone' }] })
+    expect(fetch).not.toHaveBeenCalled()
+    await expect(validateConfiguration(request({ fieldId: 'date_value', timeZone: 'America/Toronto' }))).resolves.toBeUndefined()
+    await expect(validateConfiguration(guardContext({ mappings: [{ templateId, notifierId: notifier.id, personalisation: { name: { fieldId: 'recipient_name', timeZone: 'UTC' } } }] }))).rejects.toMatchObject({ details: [{ path: 'mappings.0.personalisation.name' }] })
   })
   it('resolves a Stream Agency server-side and does not trust a supplied Agency identifier', async () => {
     const request = streamRequest()

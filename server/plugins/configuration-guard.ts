@@ -1,5 +1,5 @@
 import { defineGcsExtensionNitroPlugin, registerGcsExtensionConfigurationGuard, type GcsExtensionConfigurationGuardContext } from '@gcs-ssc/extensions/server'
-import { AgencyConfigSchema, StreamConfigSchema, EXTENSION_KEY } from '../../shared/config.ts'
+import { AgencyConfigSchema, StreamConfigSchema, EXTENSION_KEY, isValidTimeZone } from '../../shared/config.ts'
 import { loadCredential } from '../credentials.ts'
 import { createGcNotifyClient } from '../gcnotify.ts'
 import { userError } from '../errors.ts'
@@ -11,13 +11,18 @@ export const validateConfiguration = async (context: GcsExtensionConfigurationGu
     return
   }
   const parsed = StreamConfigSchema.safeParse(context.config)
-  if (!parsed.success || !context.streamId) throw userError('invalid')
+  if (!parsed.success) throw userError('invalid', 400, parsed.error.issues[0]?.path.map(String).join('.'))
+  if (!context.streamId) throw userError('invalid')
   if (parsed.data.mappings.length === 0) return
   for (const [index, mapping] of parsed.data.mappings.entries()) {
     const notifier = context.notificationNotifiers?.find(item => item.id === mapping.notifierId)
     if (!notifier) throw userError('invalid', 400, `mappings.${index}.notifierId`)
     for (const [placeholder, field] of Object.entries(mapping.personalisation)) {
-      if (!notifier.fields.some(item => item.id === field)) throw userError('invalid', 400, `mappings.${index}.personalisation.${placeholder}`)
+      const metadata = notifier.fields.find(item => item.id === (typeof field === 'string' ? field : field.fieldId))
+      const path = `mappings.${index}.personalisation.${placeholder}`
+      if (!metadata) throw userError('invalid', 400, path)
+      if (metadata.type === 'text' && typeof field !== 'string') throw userError('invalid', 400, path)
+      if (metadata.type !== 'text' && (typeof field === 'string' || !isValidTimeZone(field.timeZone))) throw userError('timeZoneRequired', 400, `${path}.timeZone`)
     }
   }
   const credential = await loadCredential(context.db, context.agencyId)

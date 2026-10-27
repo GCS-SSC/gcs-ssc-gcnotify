@@ -22,14 +22,17 @@ describe('managed browser transport fixture', () => {
     const fetcher = fixtureFetch(vi.fn())
     expect((await (await fetcher(`${origin}/v2/templates?type=email`, { headers: auth })).json()).templates[0].id).toBe(templateId)
     expect((await (await fetcher(`${origin}/v2/template/${alternateTemplateId}`, { headers: auth })).json()).name).toBe('Alternate approval / Autre approbation')
-    expect((await (await fetcher(`${origin}/v2/template/${templateId}`, { headers: auth })).json()).personalisation).toHaveProperty('link')
-    const body = { email_address: 'synthetic@example.ca', template_id: templateId, reference: 'gcs-ssc:test', personalisation: { recipient: 'Synthetic', reference: 'TEST', link: 'https://example.ca/en/home' }, ignored: 'must not be logged' }
+    expect(Object.keys((await (await fetcher(`${origin}/v2/template/${templateId}`, { headers: auth })).json()).personalisation)).toEqual(['recipient', 'reference', 'link', 'date_toronto', 'date_utc', 'time_utc', 'agency', 'stream', 'agreement', 'assigned_name', 'assigned_email'])
+    expect(Object.keys((await (await fetcher(`${origin}/v2/template/${alternateTemplateId}`, { headers: auth })).json()).personalisation)).toEqual(['recipient', 'reference', 'link'])
+    const personalisation = { recipient: 'Synthetic', reference: 'TEST', link: 'https://example.ca/en/home', date_toronto: '2026-10-26', date_utc: '2026-10-27', time_utc: '01:30:00', agency: 'Synthetic agency', stream: 'Synthetic Stream', agreement: 'TEST-123', assigned_name: 'Synthetic', assigned_email: 'synthetic@example.ca' }
+    const body = { email_address: 'synthetic@example.ca', template_id: templateId, reference: 'gcs-ssc:test', personalisation: { ...personalisation, ignored: 'must not be logged' }, ignored: 'must not be logged' }
+    expect((await fetcher(`${origin}/v2/notifications/email`, { method: 'POST', headers: auth, body: JSON.stringify({ ...body, personalisation: { recipient: 'Synthetic', reference: 'TEST', link: 'https://example.ca' } }) })).status).toBe(400)
     const result = await fetcher(`${origin}/v2/notifications/email`, { method: 'POST', headers: auth, body: JSON.stringify(body) })
     expect(result.status).toBe(201)
     const sent = await result.json()
     const trace = readFileSync(tracePath, 'utf8')
     expect(trace).not.toContain(apiKey); expect(trace).not.toContain('Authorization'); expect(trace).not.toContain('must not be logged')
-    expect(JSON.parse(trace)).toEqual({ method: 'POST', path: '/v2/notifications/email', notificationId: sent.id, body: { email_address: body.email_address, template_id: templateId, reference: body.reference, personalisation: body.personalisation } })
+    expect(JSON.parse(trace)).toEqual({ method: 'POST', path: '/v2/notifications/email', notificationId: sent.id, body: { email_address: body.email_address, template_id: templateId, reference: body.reference, personalisation } })
     const recovered = await fetcher(`${origin}/v2/notifications?reference=${encodeURIComponent(body.reference)}`, { headers: auth })
     expect(await recovered.json()).toEqual({ notifications: [{ id: sent.id, reference: body.reference }] })
     expect(await (await fetcher(`${origin}/v2/notifications?reference=absent`, { headers: auth })).json()).toEqual({ notifications: [] })
@@ -37,7 +40,7 @@ describe('managed browser transport fixture', () => {
   })
   it('requires an isolated trace path before accepting fixture email', async () => {
     vi.stubEnv('GCS_E2E_NOTIFICATION_TRACE', '')
-    const body = { email_address: 'synthetic@example.ca', template_id: templateId, reference: 'test', personalisation: { recipient: 'Synthetic', reference: 'TEST', link: 'https://example.ca' } }
+    const body = { email_address: 'synthetic@example.ca', template_id: alternateTemplateId, reference: 'test', personalisation: { recipient: 'Synthetic', reference: 'TEST', link: 'https://example.ca' } }
     await expect(fixtureFetch(vi.fn())(`${origin}/v2/notifications/email`, { method: 'POST', headers: auth, body: JSON.stringify(body) })).rejects.toThrow('isolated trace path')
   })
 })

@@ -3,15 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createExtensionTestUiRuntime } from '@gcs-ssc/extensions/testing'
-import { clearExtensionUiRuntime, setExtensionUiRuntime, ExtensionInput, ExtensionSaveButton } from '@gcs-ssc/extensions/ui'
+import { clearExtensionUiRuntime, setExtensionUiRuntime, ExtensionInput, ExtensionSaveButton, type GcsExtensionToastNotification } from '@gcs-ssc/extensions/ui'
 import config from '../../extension.config'
 import AgencyConfig from '../../components/AgencyGcNotifyConfig.vue'
 const locale = ref('en')
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status })
 let fetcher: ReturnType<typeof vi.fn>
+const addToast = vi.fn<(notification: GcsExtensionToastNotification) => void>()
 beforeEach(() => {
-  locale.value = 'en'
-  const runtime = createExtensionTestUiRuntime(); runtime.composables.useI18n = () => ({ locale, n: String }); setExtensionUiRuntime(runtime)
+  locale.value = 'en'; addToast.mockClear()
+  const runtime = createExtensionTestUiRuntime(); runtime.composables.useI18n = () => ({ locale, n: String }); runtime.composables.useToast = () => ({ add: addToast }); setExtensionUiRuntime(runtime)
   fetcher = vi.fn().mockImplementation(async () => json({ configured: true })); vi.stubGlobal('fetch', fetcher)
 })
 afterEach(() => { vi.unstubAllGlobals(); clearExtensionUiRuntime() })
@@ -25,12 +26,24 @@ describe('Agency key-only configuration', () => {
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     wrapper.unmount()
   })
-  it('saves and clears only the secret draft and retranslates retained feedback', async () => {
+  it('saves and clears the secret draft with a reactive success toast and no inline success', async () => {
     const wrapper = render(); await flushPromises(); await wrapper.find('input').setValue('synthetic-key'); await wrapper.find('button').trigger('click'); await flushPromises()
     expect(fetcher).toHaveBeenCalledWith(expect.stringContaining('/credentials'), expect.objectContaining({ method: 'PUT', body: JSON.stringify({ apiKey: 'synthetic-key' }) }))
-    expect(wrapper.find('input').element.value).toBe(''); expect(wrapper.text()).toContain('API key saved.')
+    expect(wrapper.find('input').element.value).toBe(''); expect(wrapper.text()).not.toContain('API key saved.')
+    expect(wrapper.text()).toContain('An API key is configured.')
+    expect(addToast).toHaveBeenCalledOnce()
+    const notification = addToast.mock.calls[0]?.[0]
+    expect(notification?.color).toBe('success')
+    const title = notification?.title
+    const description = notification?.description
+    expect(typeof title).toBe('function'); expect(typeof description).toBe('function')
+    if (typeof title === 'function') expect(title().children).toBe('Success')
+    if (typeof description === 'function') expect(description().children).toBe('API key saved.')
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    locale.value = 'fr-CA'; await flushPromises(); expect(wrapper.text()).toContain('Clé API enregistrée.')
+    locale.value = 'fr-CA'; await flushPromises(); expect(wrapper.text()).not.toContain('Clé API enregistrée.')
+    expect(wrapper.text()).toContain('Une clé API est configurée.')
+    if (typeof title === 'function') expect(title().children).toBe('Succès')
+    if (typeof description === 'function') expect(description().children).toBe('Clé API enregistrée.')
     wrapper.unmount()
   })
   it('retains failed candidates for retry and locks editing during a pending save', async () => {
@@ -41,7 +54,18 @@ describe('Agency key-only configuration', () => {
     expect(wrapper.findComponent(ExtensionInput).vm.$attrs.disabled).toBe(true); expect(wrapper.findComponent(ExtensionSaveButton).vm.$attrs.loading).toBe(true)
     complete(json({}, 403)); await flushPromises()
     expect(wrapper.find('input').element.value).toBe('synthetic-key'); expect(wrapper.text()).toContain('Unable to complete')
+    expect(addToast).not.toHaveBeenCalled()
     locale.value = 'fr'; await flushPromises(); expect(wrapper.text()).toContain('Impossible de terminer')
+    wrapper.unmount()
+  })
+  it('does not toast an older credential save after the Agency changes', async () => {
+    const wrapper = render(); await flushPromises()
+    let complete: (value: Response) => void = () => undefined
+    fetcher.mockImplementationOnce(() => new Promise<Response>(resolve => { complete = resolve }))
+    await wrapper.find('input').setValue('synthetic-key'); await wrapper.find('button').trigger('click'); await flushPromises()
+    await wrapper.setProps({ agencyId: '18' }); await flushPromises()
+    complete(json({ configured: true })); await flushPromises()
+    expect(addToast).not.toHaveBeenCalled(); expect(wrapper.text()).not.toContain('API key saved.')
     wrapper.unmount()
   })
   it('rejects old Agency/authority responses and ignores results after unmount', async () => {

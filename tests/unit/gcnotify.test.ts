@@ -122,6 +122,8 @@ describe('provider/configuration boundary', () => {
     expect(() => adapter.validateAgencyConfig({ mappings: {} })).toThrow()
     expect(adapter.validateStreamConfig(streamConfig)).toEqual(streamConfig)
     expect(adapter.resolveMapping({ agencyConfig: {}, streamId: '118', streamConfig, notifierId: mapping.notifierId })).toEqual({ templateId, personalisation: mapping.personalisation })
+    const zoned = { name: { fieldId: 'host_date', timeZone: 'America/Toronto' } }
+    expect(adapter.resolveMapping({ agencyConfig: {}, streamId: '118', streamConfig: { mappings: [{ ...mapping, personalisation: zoned }] }, notifierId: mapping.notifierId })).toEqual({ templateId, personalisation: zoned })
     expect(adapter.resolveMapping({ agencyConfig: {}, streamId: '119', streamConfig: {}, notifierId: mapping.notifierId })).toBeNull()
     expect(adapter.resolveMapping({ agencyConfig: {}, streamId: '118', streamConfig, notifierId: 'other' })).toBeNull()
     expect(() => adapter.resolveMapping({ agencyConfig: {}, streamId: '118', streamConfig: { mappings: false }, notifierId: mapping.notifierId })).toThrow()

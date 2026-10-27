@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
+import { computed, h, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import type { GcsExtensionJsonConfig, GcsResolvedExtension } from '@gcs-ssc/extensions'
-import { ExtensionFormField, ExtensionInput, ExtensionSaveButton, useExtensionApi, useExtensionI18n } from '@gcs-ssc/extensions/ui'
+import { ExtensionFormField, ExtensionInput, ExtensionSaveButton, useExtensionApi, useExtensionI18n, useExtensionToast } from '@gcs-ssc/extensions/ui'
 import { messages } from '../i18n/messages'
 
 const { agencyId, extension, persistedConfig, enabled = true, disabled = false, readOnly = false } = defineProps<{
@@ -10,11 +10,12 @@ const { agencyId, extension, persistedConfig, enabled = true, disabled = false, 
 }>()
 defineModel<GcsExtensionJsonConfig>({ required: true })
 const { t } = useExtensionI18n(messages)
+const toast = useExtensionToast()
 const api = computed(() => useExtensionApi(extension.key))
 const apiKey: Ref<string> = ref('')
 const configured: Ref<boolean> = ref(false)
 const pending: Ref<boolean> = ref(false)
-const feedback: Ref<'keySaved' | 'failed' | null> = ref(null)
+const feedback: Ref<'failed' | null> = ref(null)
 const unavailable = computed(() => disabled || readOnly || !enabled || persistedConfig === undefined)
 let session = 0
 const saveKey = async () => {
@@ -24,7 +25,8 @@ const saveKey = async () => {
   try {
     await api.value.put(`/agencies/${agencyId}/credentials`, { apiKey: apiKey.value })
     if (current !== session) return
-    apiKey.value = ''; configured.value = true; feedback.value = 'keySaved'
+    apiKey.value = ''; configured.value = true
+    toast.add({ title: () => h('span', t('successNotice')), description: () => h('span', t('keySaved')), color: 'success' })
   } catch { if (current === session) feedback.value = 'failed' }
   finally { if (current === session) pending.value = false }
 }

@@ -9,16 +9,16 @@ Agency Managers connect GCS-SSC approval notifications to [GC Notify](https://no
 
 The Agency editor contains only credential status, a password input, and Save. A blank password keeps the saved key. Agency configuration contains no template or mapping values. The browser receives only whether a key is configured.
 
-## Map Stream templates
+## Map Stream notifications
 
 1. Enable **GC Notify** in the owning Transfer Payment Stream's Extensions section.
-2. Choose **Configure** to open the existing full-page Stream configuration. The page lists actual GC Notify email templates by name, with IDs as secondary information.
-3. Choose **Configure mapping** on a template and select a host notifier. Map every required template placeholder to one of that notifier's host fields.
-4. Choose **Save notification mappings**. Repeat for other notifiers as needed. Different notifiers can use the same template, while each notifier has one template per Stream.
+2. Choose **Configure** to open the existing full-page Stream configuration. The page lists the host notifiers, including those without a template mapping.
+3. Choose the **Edit** icon in a notifier’s Actions column. The medium dialog loads GC Notify email templates asynchronously. Select a template by name and map every required placeholder to one of that notifier's host fields. Field choices use the host's bilingual groups, such as System and Approval. Date and time fields require an explicit IANA time zone for each placeholder; no zone is chosen automatically.
+4. Choose **Save** in the dialog. Repeat for other notifiers as needed. Different notifiers can use the same template, while each notifier has one template per Stream.
 
-Only the selected template's notifier and placeholder controls expand. Template wording, bilingual content, and branding remain managed in GC Notify. Only email is supported.
+The main page uses the same table layout as Agreements. Template and placeholder controls appear only in the selected notifier's dialog. Opening the page does not request remote templates. A failed template request can be retried in the dialog; an unavailable saved template must be replaced, or unlinked from the main table. Cancel or dismissal discards the local draft. Mapped notifier rows provide a separate red unlink icon in Actions. Its confirmation removes only that notifier’s mapping immediately; cancelling leaves configuration unchanged. The edit dialog has no unlink action. Save persists the mappings and closes the dialog after success; a failed save keeps the draft and associated field errors open. Template wording, bilingual content, and branding remain managed in GC Notify. Only email is supported.
 
-Stream configuration stores `mappings: [{ templateId, notifierId, personalisation }]`. Placeholder keys map to host field identifiers. The initial host notifier is `approval.action_required`; its catalog supplies `recipient_name`, `item_reference`, `item_title`, and `approval_url`. Other host notifier and field choices come from the host catalog rather than an extension-owned list. Unmapped notifiers send nothing. Each Stream must explicitly enable and configure the provider; Agency configuration is never a mapping fallback.
+Stream configuration stores `mappings: [{ templateId, notifierId, personalisation }]`. Placeholder keys map to host field identifiers for text, or `{ fieldId, timeZone }` for date and time values. The host formats date values as `YYYY-MM-DD` and time values as 24-hour `HH:mm:ss` in the selected zone, using the same notification-admission instant. The initial host notifier is `approval.action_required`; its catalog supplies `recipient_name`, `item_reference`, `item_title`, and `approval_url`. Other host notifier and field choices come from the host catalog rather than an extension-owned list. Unmapped notifiers send nothing. Each Stream must explicitly enable and configure the provider; Agency configuration is never a mapping fallback.
 
 Agency Managers manage the key. Stream Managers configure their Stream without needing Agency read access. The template endpoint resolves the Stream's owning Agency server-side and never returns credentials. Host-managed configuration and encrypted secret records retain host audit ownership; the extension creates no tables.
 
