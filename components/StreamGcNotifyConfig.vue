@@ -274,7 +274,7 @@ onBeforeUnmount(() => { scopeSession += 1; unlinkRequest.value?.controller?.abor
       </div>
     </template>
   </ExtensionResourceLayoutPage>
-  <ExtensionModal :open="editing !== null" :title="editing ? t('editNotifier', { notifier: editing.notifier.name[locale] }) : t('editMapping')" :description="t('chooseTemplateHelp')" :dismissible="!saving" :close="saving ? false : undefined" :ui="{ content: 'sm:max-w-2xl', body: 'max-h-[min(60vh,32rem)] overflow-y-auto' }" @update:open="(value: boolean) => value ? undefined : closeEditor()">
+  <ExtensionModal :open="editing !== null" :title="editing ? t('editNotifier', { notifier: editing.notifier.name[locale] }) : t('editMapping')" :description="t('chooseTemplateHelp')" :dismissible="!saving" :close="saving ? false : undefined" :ui="{ content: 'sm:max-w-4xl', body: 'max-h-[min(60vh,32rem)] overflow-y-auto' }" @update:open="(value: boolean) => value ? undefined : closeEditor()">
     <template #body>
       <div v-if="editing" ref="mappingFields" class="space-y-3" data-field-scope="extension.gcs-ssc-gcnotify.stream-mapping-modal">
         <ExtensionAlert v-if="templateFailure" color="error" :title="t('templateLoadFailed')" :description="templateFailureMessage">
@@ -288,18 +288,16 @@ onBeforeUnmount(() => { scopeSession += 1; unlinkRequest.value?.controller?.abor
         </ExtensionFormField>
         <ExtensionAlert v-if="templateUnavailable" color="warning" :title="t('templateUnavailable')" />
         <template v-if="binding && selectedTemplate && !templateFailure">
-          <div v-for="placeholder in selectedTemplate.requiredPersonalisation" :key="placeholder" class="space-y-3">
-            <ExtensionFormField :label="t('mapping', { placeholder })" :name="placeholderPath(placeholder)" :error="fieldErrors[placeholderPath(placeholder)]" required data-ui-target="extension.gcs-ssc-gcnotify.stream-config.placeholder">
-              <ExtensionSelectMenu :model-value="mappedFieldId(placeholder)" :aria-invalid="Boolean(fieldErrors[placeholderPath(placeholder)]) || undefined" :items="fieldOptions" value-key="value" :disabled="saving || templatesLoading" required aria-required="true" @update:model-value="setField(placeholder, $event)" />
+          <div v-for="placeholder in selectedTemplate.requiredPersonalisation" :key="placeholder" role="group" :aria-label="t('mapping', { placeholder })" class="grid grid-rows-[auto_auto] gap-x-3 gap-y-1.5" :class="needsTimeZone(placeholder) ? 'grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.5fr)]' : needsLocale(placeholder) ? 'grid-cols-[minmax(0,2fr)_minmax(0,1fr)]' : 'grid-cols-[minmax(0,1fr)]'">
+            <ExtensionFormField :ui="{ root: 'row-span-2 grid min-w-0 grid-rows-subgrid', wrapper: 'min-w-0', labelWrapper: 'min-w-0', label: 'min-w-0 wrap-anywhere', container: 'mt-0 min-w-0' }" :label="t('mapping', { placeholder })" :name="placeholderPath(placeholder)" :error="fieldErrors[placeholderPath(placeholder)]" required data-ui-target="extension.gcs-ssc-gcnotify.stream-config.placeholder">
+              <ExtensionSelectMenu class="w-full min-w-0" :ui="{ content: 'min-w-[min(18rem,calc(100vw_-_2rem))] max-w-[calc(100vw_-_2rem)]' }" :model-value="mappedFieldId(placeholder)" :aria-invalid="Boolean(fieldErrors[placeholderPath(placeholder)]) || undefined" :items="fieldOptions" value-key="value" :disabled="saving || templatesLoading" required aria-required="true" @update:model-value="setField(placeholder, $event)" />
             </ExtensionFormField>
-            <div v-if="needsLocale(placeholder) || needsTimeZone(placeholder)" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <ExtensionFormField v-if="needsLocale(placeholder)" :label="t('localeFor', { placeholder })" :name="`${placeholderPath(placeholder)}.locale`" :error="fieldErrors[`${placeholderPath(placeholder)}.locale`]" required data-ui-target="extension.gcs-ssc-gcnotify.stream-config.locale">
-                <ExtensionSelectMenu :model-value="mappedLocale(placeholder)" :items="localeOptions" :placeholder="t('chooseLocale')" :aria-invalid="Boolean(fieldErrors[`${placeholderPath(placeholder)}.locale`]) || undefined" value-key="value" :disabled="saving || templatesLoading" required aria-required="true" @update:model-value="setLocale(placeholder, $event)" />
-              </ExtensionFormField>
-              <ExtensionFormField v-if="needsTimeZone(placeholder)" :label="t('timeZoneFor', { placeholder })" :name="`${placeholderPath(placeholder)}.timeZone`" :error="fieldErrors[`${placeholderPath(placeholder)}.timeZone`]" required data-ui-target="extension.gcs-ssc-gcnotify.stream-config.time-zone">
-                <ExtensionSelectMenu :model-value="mappedTimeZone(placeholder)" :items="timeZoneOptions" :placeholder="t('chooseTimeZone')" :aria-invalid="Boolean(fieldErrors[`${placeholderPath(placeholder)}.timeZone`]) || undefined" value-key="value" :disabled="saving || templatesLoading" required aria-required="true" @update:model-value="setTimeZone(placeholder, $event)" />
-              </ExtensionFormField>
-            </div>
+            <ExtensionFormField v-if="needsLocale(placeholder)" :ui="{ root: 'row-span-2 grid min-w-0 grid-rows-subgrid', wrapper: 'min-w-0', labelWrapper: 'min-w-0', label: 'min-w-0 wrap-anywhere', container: 'mt-0 min-w-0' }" :label="t('language')" :name="`${placeholderPath(placeholder)}.locale`" :error="fieldErrors[`${placeholderPath(placeholder)}.locale`]" required data-ui-target="extension.gcs-ssc-gcnotify.stream-config.locale">
+              <ExtensionSelectMenu class="w-full min-w-0" :ui="{ content: 'min-w-[min(18rem,calc(100vw_-_2rem))] max-w-[calc(100vw_-_2rem)]' }" :model-value="mappedLocale(placeholder)" :items="localeOptions" :placeholder="t('chooseLocale')" :aria-invalid="Boolean(fieldErrors[`${placeholderPath(placeholder)}.locale`]) || undefined" value-key="value" :disabled="saving || templatesLoading" required aria-required="true" @update:model-value="setLocale(placeholder, $event)" />
+            </ExtensionFormField>
+            <ExtensionFormField v-if="needsTimeZone(placeholder)" :ui="{ root: 'row-span-2 grid min-w-0 grid-rows-subgrid', wrapper: 'min-w-0', labelWrapper: 'min-w-0', label: 'min-w-0 wrap-anywhere', container: 'mt-0 min-w-0' }" :label="t('timeZone')" :name="`${placeholderPath(placeholder)}.timeZone`" :error="fieldErrors[`${placeholderPath(placeholder)}.timeZone`]" required data-ui-target="extension.gcs-ssc-gcnotify.stream-config.time-zone">
+              <ExtensionSelectMenu class="w-full min-w-0" :ui="{ content: 'min-w-[min(18rem,calc(100vw_-_2rem))] max-w-[calc(100vw_-_2rem)]' }" :model-value="mappedTimeZone(placeholder)" :items="timeZoneOptions" :placeholder="t('chooseTimeZone')" :aria-invalid="Boolean(fieldErrors[`${placeholderPath(placeholder)}.timeZone`]) || undefined" value-key="value" :disabled="saving || templatesLoading" required aria-required="true" @update:model-value="setTimeZone(placeholder, $event)" />
+            </ExtensionFormField>
           </div>
         </template>
         <ExtensionAlert v-if="saveFailure" color="error" role="alert" :title="t('saveFailed')" :description="saveFailureMessage" />
