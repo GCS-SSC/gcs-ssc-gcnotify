@@ -1,0 +1,36 @@
+{
+  "name": "@gcs-ssc/gcs-ssc-gcnotify",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:unit": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@gcs-ssc/extensions": "https://github.com/GCS-SSC/gcs-ssc-extensions/releases/download/v0.3.21/gcs-ssc-extensions-0.3.21.tgz",
+    "kysely": "^0.28.11",
+    "zod": "^4.3.6"
+  },
+  "peerDependencies": {
+    "vue": "^3.5.28"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "@vitejs/plugin-vue": "^6.0.4",
+    "@vitest/coverage-v8": "^4.1.12",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^28.1.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12",
+    "vue": "^3.5.28",
+    "vue-tsc": "^3.2.4"
+  },
+  "description": "GC Notify email notifications for GCS-SSC approval turns",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GCS-SSC/gcs-ssc-gcnotify.git"
+  }
+}
