@@ -1,5 +1,6 @@
-import { getEncryptedExtensionSecret, setEncryptedExtensionSecret, lockGcsExtensionLifecycleScope, type GcsExtensionRouteContext } from '@gcs-ssc/extensions/server'
+import { getEncryptedExtensionSecret, setEncryptedExtensionSecret, lockGcsExtensionLifecycleScope, resolveExtensionStreamContext, type GcsExtensionRouteContext } from '@gcs-ssc/extensions/server'
 import type { Kysely } from 'kysely'
+import { z } from 'zod'
 import { EXTENSION_KEY, CREDENTIAL_SECRET_KEY, CredentialSchema } from '../shared/config.ts'
 import { createGcNotifyClient } from './gcnotify.ts'
 import { userError } from './errors.ts'
@@ -47,6 +48,15 @@ export const saveCredential = async (context: GcsExtensionRouteContext) => {
   return { configured: true }
 }
 export const listTemplates = async (context: GcsExtensionRouteContext) => {
-  const credential = await loadCredential(context.db, owner(context))
+  const streamId = context.params.streamId
+  if (!streamId) throw userError('invalid')
+  const captured = z.object({ agencyId: z.string().min(1), streamId: z.string().min(1) }).safeParse(context.stream)
+  const authorized = context.authorizedScope
+  if (!captured.success || captured.data.streamId !== streamId || authorized?.type !== 'entity' || captured.data.agencyId !== authorized.agencyId) throw userError('scopeChanged', 403)
+  const stream = await resolveExtensionStreamContext(context.db as never, streamId)
+  if (!stream) throw userError('invalid', 404)
+  const current = stream.scope
+  if (stream.agencyId !== captured.data.agencyId || current.type !== 'entity' || current.agencyId !== authorized.agencyId || current.path.length !== authorized.path.length || current.path.some((part, index) => part.type !== authorized.path[index]?.type || part.id !== authorized.path[index]?.id)) throw userError('scopeChanged', 403)
+  const credential = await loadCredential(context.db, captured.data.agencyId)
   return { templates: await createGcNotifyClient(credential.apiKey, AbortSignal.timeout(15_000)).listTemplates() }
 }

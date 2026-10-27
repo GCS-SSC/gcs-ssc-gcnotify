@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createGcNotifyClient, deliveryIdentity, matchesDeliveryIdentity, GC_NOTIFY_ORIGIN } from '../../server/gcnotify'
 import adapter from '../../server/notification-adapter'
-import { AgencyConfigSchema, parseAgencyConfig, CREDENTIAL_SECRET_KEY, CredentialSchema } from '../../shared/config'
+import { AgencyConfigSchema, StreamConfigSchema, CREDENTIAL_SECRET_KEY, CredentialSchema } from '../../shared/config'
 import manifest from '../../extension.config'
 import { messages, localized } from '../../i18n/messages'
 
@@ -12,7 +12,7 @@ const syntheticKeyId = '22222222-2222-4222-8222-222222222222'
 const apiKey = ['gcntfy', 'my-test-key', serviceId, syntheticKeyId].join('-')
 const template = { id: templateId, name: 'Bilingual approval', type: 'email', personalisation: { name: { required: true }, optional: { required: false } } }
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status })
-const context = () => ({ agencyId: '1', agencyConfig: {}, secrets: { get: async (key: string) => key === CREDENTIAL_SECRET_KEY ? { apiKey } : null }, signal: new AbortController().signal })
+const context = () => ({ agencyId: '1', agencyConfig: {}, streamId: '118', streamConfig: {}, secrets: { get: async (key: string) => key === CREDENTIAL_SECRET_KEY ? { apiKey } : null }, signal: new AbortController().signal })
 const sendInput = () => ({ ...context(), deliveryContext: deliveryIdentity(apiKey), templateId, recipientEmail: 'test@example.ca', personalisation: { name: 'Jane' }, reference: 'opaque-reference' })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
@@ -115,17 +115,21 @@ describe('provider/configuration boundary', () => {
     fetcher.mockResolvedValueOnce(response(template)).mockResolvedValueOnce(response({}))
     await expect(adapter.send(sendInput())).rejects.toThrow()
   })
-  it('validates catalog mappings and resolves only the declared notifier', () => {
-    const config = { mappings: { 'approval.action_required': { templateId, personalisation: { name: 'recipient_name' } } } }
-    expect(adapter.validateAgencyConfig(config)).toEqual(config)
-    expect(adapter.resolveMapping({ agencyConfig: config, notifierId: 'approval.action_required' })).toEqual(config.mappings['approval.action_required'])
-    expect(adapter.resolveMapping({ agencyConfig: {}, notifierId: 'approval.action_required' })).toBeNull()
-    expect(adapter.resolveMapping({ agencyConfig: config, notifierId: 'other' })).toBeNull()
-    expect(() => adapter.resolveMapping({ agencyConfig: { mappings: false }, notifierId: 'approval.action_required' })).toThrow()
-    expect(() => adapter.validateAgencyConfig({ mappings: { 'approval.action_required': { templateId, personalisation: { name: 'secret' } } } })).toThrow()
-    expect(AgencyConfigSchema.parse({})).toEqual({ mappings: {} })
-    expect(parseAgencyConfig({})).toEqual({ mappings: {} })
+  it('resolves only explicit Stream mappings and rejects superseded Agency shapes', () => {
+    const mapping = { templateId, notifierId: 'approval.action_required', personalisation: { name: 'recipient_name' } }
+    const streamConfig = { mappings: [mapping] }
+    expect(adapter.validateAgencyConfig({})).toEqual({})
+    expect(() => adapter.validateAgencyConfig({ mappings: {} })).toThrow()
+    expect(adapter.validateStreamConfig(streamConfig)).toEqual(streamConfig)
+    expect(adapter.resolveMapping({ agencyConfig: {}, streamId: '118', streamConfig, notifierId: mapping.notifierId })).toEqual({ templateId, personalisation: mapping.personalisation })
+    expect(adapter.resolveMapping({ agencyConfig: {}, streamId: '119', streamConfig: {}, notifierId: mapping.notifierId })).toBeNull()
+    expect(adapter.resolveMapping({ agencyConfig: {}, streamId: '118', streamConfig, notifierId: 'other' })).toBeNull()
+    expect(() => adapter.resolveMapping({ agencyConfig: {}, streamId: '118', streamConfig: { mappings: false }, notifierId: mapping.notifierId })).toThrow()
+    expect(AgencyConfigSchema.parse({})).toEqual({})
+    expect(StreamConfigSchema.parse({})).toEqual({ mappings: [] })
     expect(CredentialSchema.safeParse({ apiKey: 'x' }).success).toBe(false)
+    expect(StreamConfigSchema.safeParse({ mappings: [mapping, mapping] }).success).toBe(false)
+    expect(StreamConfigSchema.safeParse({ mappings: [mapping, { ...mapping, notifierId: 'another.host.notifier' }] }).success).toBe(true)
   })
   it('rejects unavailable credentials and missing required mapped fields', async () => {
     await expect(adapter.prepareDelivery({ ...context(), secrets: { get: async () => null } })).rejects.toMatchObject({ statusCode: 409 })
@@ -136,7 +140,8 @@ describe('provider/configuration boundary', () => {
   })
   it('declares Manager-only public extension boundaries and bilingual catalogs', () => {
     expect(manifest.configurationAccess).toBe('manager')
-    expect(manifest.configurationScope).toBe('agency')
+    expect(manifest.configurationScope).toBeUndefined()
+    expect(manifest.admin?.streamConfigPage?.path).toContain('StreamGcNotifyConfig')
     expect(manifest.serverHandlers?.every(handler => handler.rbac?.action === 'delete')).toBe(true)
     expect(manifest.notificationProvider?.adapter.path).toContain('notification-adapter')
     expect(manifest.auditOwnership).toEqual([])

@@ -1,5 +1,5 @@
 import { defineGcsNotificationProviderAdapter, type GcsNotificationProviderContext } from '@gcs-ssc/extensions/server'
-import { AgencyConfigSchema, CREDENTIAL_SECRET_KEY, CredentialSchema } from '../shared/config.ts'
+import { AgencyConfigSchema, StreamConfigSchema, CREDENTIAL_SECRET_KEY, CredentialSchema } from '../shared/config.ts'
 import { createGcNotifyClient, deliveryIdentity, matchesDeliveryIdentity } from './gcnotify.ts'
 import { userError } from './errors.ts'
 
@@ -11,13 +11,19 @@ const keyFor = async (context: GcsNotificationProviderContext): Promise<string> 
 export default defineGcsNotificationProviderAdapter({
   validateAgencyConfig: config => {
     const parsed = AgencyConfigSchema.safeParse(config)
-    if (!parsed.success) throw userError('invalid')
+    if (!parsed.success) throw userError('invalid', 400, parsed.error.issues[0]?.path.map(String).join('.'))
     return parsed.data
   },
-  resolveMapping: ({ agencyConfig, notifierId }) => {
-    const parsed = AgencyConfigSchema.safeParse(agencyConfig)
-    if (!parsed.success) throw userError('invalid')
-    return notifierId === 'approval.action_required' ? parsed.data.mappings[notifierId] ?? null : null
+  validateStreamConfig: config => {
+    const parsed = StreamConfigSchema.safeParse(config)
+    if (!parsed.success) throw userError('invalid', 400, parsed.error.issues[0]?.path.map(String).join('.'))
+    return parsed.data
+  },
+  resolveMapping: ({ streamConfig, notifierId }) => {
+    const parsed = StreamConfigSchema.safeParse(streamConfig)
+    if (!parsed.success) throw userError('invalid', 400, parsed.error.issues[0]?.path.map(String).join('.'))
+    const mapping = parsed.data.mappings.find(item => item.notifierId === notifierId)
+    return mapping ? { templateId: mapping.templateId, personalisation: mapping.personalisation } : null
   },
   prepareDelivery: async context => deliveryIdentity(await keyFor(context)),
   listTemplates: async context => await createGcNotifyClient(await keyFor(context), context.signal).listTemplates(),

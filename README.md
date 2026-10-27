@@ -2,15 +2,25 @@
 
 Agency Managers connect GCS-SSC approval notifications to [GC Notify](https://notification.canada.ca/). The host decides whose approval turn is active and owns the durable queue. This extension owns email template discovery, personalisation mapping, encrypted credentials and GC Notify API calls. It provides no delivery-reporting UI.
 
-## Configure
+## Configure the Agency key
 
-1. Enable **GC Notify** in the Agency's Extensions section and save its configuration. Select it as that Agency's notification provider.
-2. Enter a GC Notify API key and choose **Save API key**. A template-list request validates the key before replacing the encrypted saved secret. The browser receives only whether a key is configured.
-3. Choose **Load email templates**, select a bilingual email template, and map every required placeholder to a host notifier field. Save the extension configuration.
+1. Enable **GC Notify** in the Agency's Extensions section and select it as the Agency's notification provider.
+2. Open its Agency configuration, enter a GC Notify API key, and choose **Save API key**. A template-list request validates the key before replacing the encrypted saved secret.
 
-The initial notifier is `approval.action_required`. Its supported fields are `recipient_name`, `item_reference`, `item_title`, and `approval_url`. Leave the template unmapped to send nothing for that notifier. Template wording, bilingual content and branding remain managed in GC Notify. Only email is supported; SMS requires a future recipient-contact contract.
+The Agency editor contains only credential status, a password input, and Save. A blank password keeps the saved key. Agency configuration contains no template or mapping values. The browser receives only whether a key is configured.
 
-The host requires Agency Manager authority for configuration and credential/template endpoints. Transfer Payment Streams cannot override Agency notification configuration. Host-managed configuration and encrypted secret records retain host audit ownership; the extension creates no tables.
+## Map Stream templates
+
+1. Enable **GC Notify** in the owning Transfer Payment Stream's Extensions section.
+2. Choose **Configure** to open the existing full-page Stream configuration. The page lists actual GC Notify email templates by name, with IDs as secondary information.
+3. Choose **Configure mapping** on a template and select a host notifier. Map every required template placeholder to one of that notifier's host fields.
+4. Choose **Save notification mappings**. Repeat for other notifiers as needed. Different notifiers can use the same template, while each notifier has one template per Stream.
+
+Only the selected template's notifier and placeholder controls expand. Template wording, bilingual content, and branding remain managed in GC Notify. Only email is supported.
+
+Stream configuration stores `mappings: [{ templateId, notifierId, personalisation }]`. Placeholder keys map to host field identifiers. The initial host notifier is `approval.action_required`; its catalog supplies `recipient_name`, `item_reference`, `item_title`, and `approval_url`. Other host notifier and field choices come from the host catalog rather than an extension-owned list. Unmapped notifiers send nothing. Each Stream must explicitly enable and configure the provider; Agency configuration is never a mapping fallback.
+
+Agency Managers manage the key. Stream Managers configure their Stream without needing Agency read access. The template endpoint resolves the Stream's owning Agency server-side and never returns credentials. Host-managed configuration and encrypted secret records retain host audit ownership; the extension creates no tables.
 
 ## Delivery and recovery
 
@@ -37,4 +47,4 @@ bun run test:coverage
 
 Unit tests exercise the real SDK entrypoints, extension editor/catalog, API request shapes, encrypted-secret handoff, fresh authorization ordering, template validation, rejection handling and ambiguous-send recovery. Coverage thresholds are 80% for lines, statements, branches and functions.
 
-`tests/fixtures/gcnotify-fetch.mjs` is an explicit managed-browser transport fixture. Run an isolated host browser journey with `NODE_OPTIONS=--import=/absolute/path/to/tests/fixtures/gcnotify-fetch.mjs`. It activates only for the host's `.output/server/index.mjs`, delegates unrelated requests, and rejects unexpected GC Notify operations. It supplies one bilingual template with required `recipient`, `reference` and `link` placeholders; map them to `recipient_name`, `item_reference` and `approval_url`. The fixture API key is exported in that file, is synthetic, and cannot send email. For a complete host queue journey, set `GCS_E2E_NOTIFICATION_TRACE` to an isolated temporary file. The fixture validates email submissions, records the public payload without authorization headers or API keys, and returns an accepted notification ID. The managed runner owns trace cleanup. Fixture-backed verification is separate from a live GC Notify delivery test.
+`tests/fixtures/gcnotify-fetch.mjs` is an explicit managed-browser transport fixture. Run an isolated host browser journey with `NODE_OPTIONS=--import=/absolute/path/to/tests/fixtures/gcnotify-fetch.mjs`. It activates only for the host's `.output/server/index.mjs`, delegates unrelated requests, and rejects unexpected GC Notify operations. It supplies two bilingual templates with required `recipient`, `reference` and `link` placeholders; map them to `recipient_name`, `item_reference` and `approval_url`. The fixture API key is exported in that file, is synthetic, and cannot send email. For a complete host queue journey, set `GCS_E2E_NOTIFICATION_TRACE` to an isolated temporary file. The fixture validates email submissions, records the public payload without authorization headers or API keys, and returns an accepted notification ID. The managed runner owns trace cleanup. Fixture-backed verification is separate from a live GC Notify delivery test.

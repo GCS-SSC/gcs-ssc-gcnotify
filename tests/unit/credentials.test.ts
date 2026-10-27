@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import type { GcsExtensionRouteContext, GcsExtensionConfigurationGuardContext } from '@gcs-ssc/extensions/server'
-const sdk = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), lock: vi.fn(), register: vi.fn() }))
-vi.mock('@gcs-ssc/extensions/server', async original => ({ ...await original<typeof import('@gcs-ssc/extensions/server')>(), getEncryptedExtensionSecret: sdk.get, setEncryptedExtensionSecret: sdk.set, lockGcsExtensionLifecycleScope: sdk.lock, registerGcsExtensionConfigurationGuard: sdk.register }))
+const sdk = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), lock: vi.fn(), register: vi.fn(), stream: vi.fn() }))
+vi.mock('@gcs-ssc/extensions/server', async original => ({ ...await original<typeof import('@gcs-ssc/extensions/server')>(), getEncryptedExtensionSecret: sdk.get, setEncryptedExtensionSecret: sdk.set, lockGcsExtensionLifecycleScope: sdk.lock, registerGcsExtensionConfigurationGuard: sdk.register, resolveExtensionStreamContext: sdk.stream }))
 import { credentialSummary, loadCredential, saveCredential, listTemplates } from '../../server/credentials'
 import guardPlugin, { validateConfiguration } from '../../server/plugins/configuration-guard'
 import getRoute from '../../server/api/credentials.get'
@@ -20,10 +20,12 @@ for (const operation of [query.select, query.where, query.forUpdate]) operation.
 const trx = { selectFrom: vi.fn(() => query) }
 const auth = { lockAuthState: vi.fn(), authorizeCurrentEntity: vi.fn(), authorizeCurrentScope: vi.fn() }
 const context = (body: unknown = { apiKey }): GcsExtensionRouteContext => ({ params: { agencyId: '17' }, db: { transaction: () => ({ execute: async (callback: (value: unknown) => Promise<unknown>) => await callback(trx) }) }, readBody: async () => body, writeAuthorization: auth }) as unknown as GcsExtensionRouteContext
-const guardContext = (config: unknown = { mappings: { 'approval.action_required': { templateId, personalisation: { name: 'recipient_name' } } } }): GcsExtensionConfigurationGuardContext => ({ extensionKey: EXTENSION_KEY, targetExtensionKey: EXTENSION_KEY, scope: 'agency', agencyId: '17', enabled: true, config, db: {}, event: {} }) as unknown as GcsExtensionConfigurationGuardContext
+const streamScope = { type: 'entity' as const, agencyId: '17', path: [{ type: 'transfer_payment', id: '10' }, { type: 'transfer_payment_stream', id: '118' }] }
+const streamRequest = (): GcsExtensionRouteContext => { const request = context(); request.params = { streamId: '118', agencyId: '999' }; request.stream = { streamId: '118', agencyId: '17' }; request.authorizedScope = streamScope; return request }
+const guardContext = (config: unknown = { mappings: [{ templateId, notifierId: 'approval.action_required', personalisation: { name: 'recipient_name' } }] }): GcsExtensionConfigurationGuardContext => ({ extensionKey: EXTENSION_KEY, targetExtensionKey: EXTENSION_KEY, scope: 'stream', agencyId: '17', streamId: '118', enabled: true, config, db: {}, event: {}, notificationNotifiers: [{ id: 'approval.action_required', name: { en: 'Approval', fr: 'Approbation' }, fields: [{ id: 'recipient_name', name: { en: 'Name', fr: 'Nom' } }] }] }) as unknown as GcsExtensionConfigurationGuardContext
 beforeEach(() => {
   vi.clearAllMocks()
-  sdk.get.mockResolvedValue({ apiKey }); sdk.set.mockResolvedValue({ id: '1' }); query.executeTakeFirst.mockResolvedValue({ enabled: true })
+  sdk.stream.mockResolvedValue({ agencyId: '17', streamId: '118', scope: streamScope }); sdk.get.mockResolvedValue({ apiKey }); sdk.set.mockResolvedValue({ id: '1' }); query.executeTakeFirst.mockResolvedValue({ enabled: true })
   vi.stubEnv('GCS_EXTENSION_SECRETS_KEY', Buffer.alloc(32, 1).toString('base64'))
   vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes('/v2/template/') ? template : { templates: [template] }))))
 })
@@ -68,7 +70,8 @@ describe('Manager configuration credentials', () => {
     await expect(credentialSummary(context())).rejects.toThrow('GCS_EXTENSION_SECRETS_KEY')
   })
   it('returns current remote templates for editor discovery', async () => {
-    expect(await listTemplates(context())).toEqual({ templates: [{ id: templateId, name: 'Approvals', kind: 'email', requiredPersonalisation: ['name'] }] })
+    const request = streamRequest()
+    expect(await listTemplates(request)).toEqual({ templates: [{ id: templateId, name: 'Approvals', kind: 'email', requiredPersonalisation: ['name'] }] })
     expect(typeof getRoute).toBe('function')
     expect(typeof putRoute).toBe('function')
     expect(typeof templateRoute).toBe('function')
@@ -77,11 +80,39 @@ describe('Manager configuration credentials', () => {
 describe('configuration save guard', () => {
   it('requires every latest remote placeholder and supported host field', async () => {
     await expect(validateConfiguration(guardContext())).resolves.toBeUndefined()
-    await expect(validateConfiguration(guardContext({ mappings: { 'approval.action_required': { templateId, personalisation: {} } } }))).rejects.toMatchObject({ code: 'GCS_GCNOTIFY_REQUIREDMAPPING' })
+    await expect(validateConfiguration(guardContext({ mappings: [{ templateId, notifierId: 'approval.action_required', personalisation: {} }] }))).rejects.toMatchObject({ code: 'GCS_GCNOTIFY_REQUIREDMAPPING' })
     await expect(validateConfiguration(guardContext({ mappings: false }))).rejects.toMatchObject({ code: 'GCS_GCNOTIFY_INVALID' })
   })
+  it('validates dynamic host catalog IDs and reports the exact mapping field', async () => {
+    const request = guardContext()
+    await expect(validateConfiguration({ ...request, notificationNotifiers: [] })).rejects.toMatchObject({ details: [{ path: 'mappings.0.notifierId' }] })
+    await expect(validateConfiguration(guardContext({ mappings: [{ templateId, notifierId: 'approval.action_required', personalisation: { name: 'unknown' } }] }))).rejects.toMatchObject({ details: [{ path: 'mappings.0.personalisation.name' }] })
+    expect(fetch).not.toHaveBeenCalled()
+    const custom = { id: 'other.host.notifier', name: { en: 'Other', fr: 'Autre' }, fields: [{ id: 'custom_host_value', name: { en: 'Custom', fr: 'Personnalisé' } }] }
+    await expect(validateConfiguration({ ...guardContext({ mappings: [{ templateId, notifierId: custom.id, personalisation: { name: 'custom_host_value' } }] }), notificationNotifiers: [custom] })).resolves.toBeUndefined()
+    await expect(validateConfiguration({ ...guardContext(), scope: 'agency', streamId: undefined })).rejects.toMatchObject({ code: 'GCS_GCNOTIFY_INVALID' })
+  })
+  it('resolves a Stream Agency server-side and does not trust a supplied Agency identifier', async () => {
+    const request = streamRequest()
+    expect(await listTemplates(request)).toHaveProperty('templates')
+    expect(sdk.get).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ownerId: '17' }))
+    sdk.stream.mockResolvedValueOnce(null)
+    await expect(listTemplates(request)).rejects.toMatchObject({ statusCode: 404 })
+    await expect(listTemplates(context())).rejects.toMatchObject({ statusCode: 400 })
+  })
+  it('rejects an ownership transfer after host authorization before any secret or external request', async () => {
+    const request = streamRequest()
+    sdk.stream.mockResolvedValueOnce({ agencyId: '18', streamId: '118', scope: { ...streamScope, agencyId: '18' } })
+    await expect(listTemplates(request)).rejects.toMatchObject({ code: 'GCS_GCNOTIFY_SCOPECHANGED', statusCode: 403 })
+    expect(sdk.get).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled()
+    sdk.stream.mockResolvedValueOnce({ agencyId: '17', streamId: '118', scope: { ...streamScope, path: [{ type: 'transfer_payment', id: '20' }, { type: 'transfer_payment_stream', id: '118' }] } })
+    await expect(listTemplates(request)).rejects.toMatchObject({ statusCode: 403 })
+    const missingCapturedScope = streamRequest(); delete missingCapturedScope.authorizedScope
+    await expect(listTemplates(missingCapturedScope)).rejects.toMatchObject({ statusCode: 403 })
+    expect(sdk.get).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled()
+  })
   it('permits empty bootstrap and skips other extension/disabled/scope changes', async () => {
-    for (const context of [guardContext({}), { ...guardContext(), extensionKey: 'other' }, { ...guardContext(), targetExtensionKey: 'other' }, { ...guardContext(), scope: 'stream' as const }, { ...guardContext(), enabled: false }, { ...guardContext(), config: undefined }]) await validateConfiguration(context)
+    for (const context of [guardContext({}), { ...guardContext(), extensionKey: 'other' }, { ...guardContext(), targetExtensionKey: 'other' }, { ...guardContext(), scope: 'agency' as const, config: {} }, { ...guardContext(), enabled: false }, { ...guardContext(), config: undefined }]) await validateConfiguration(context)
     expect(fetch).not.toHaveBeenCalled()
     const app = { hooks: { hook: vi.fn() } }
     await guardPlugin(app as never)

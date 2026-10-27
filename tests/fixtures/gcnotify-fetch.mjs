@@ -7,7 +7,10 @@ const syntheticServiceId = '11111111-1111-4111-8111-111111111111'
 const syntheticKeyId = '22222222-2222-4222-8222-222222222222'
 export const apiKey = ['gcntfy', 'browser-fixture', syntheticServiceId, syntheticKeyId].join('-')
 export const templateId = '33333333-3333-4333-8333-333333333333'
+export const alternateTemplateId = '55555555-5555-4555-8555-555555555555'
 const template = { id: templateId, name: 'Approval required / Approbation requise', type: 'email', personalisation: { recipient: { required: true }, reference: { required: true }, link: { required: true } } }
+const alternateTemplate = { ...template, id: alternateTemplateId, name: 'Alternate approval / Autre approbation' }
+const templates = [template, alternateTemplate]
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } })
 export const fixtureFetch = original => {
   const accepted = new Map()
@@ -17,15 +20,18 @@ export const fixtureFetch = original => {
     const headers = new Headers(options?.headers ?? (input instanceof Request ? input.headers : undefined))
     if (headers.get('authorization') !== `ApiKey-v1 ${apiKey}`) return json({ errors: [{ message: 'Invalid fixture key' }] }, 403)
     const method = options?.method ?? (input instanceof Request ? input.method : 'GET')
-    if (method === 'GET' && url.pathname === '/v2/templates' && url.searchParams.get('type') === 'email') return json({ templates: [template] })
-    if (method === 'GET' && url.pathname === `/v2/template/${templateId}`) return json(template)
+    if (method === 'GET' && url.pathname === '/v2/templates' && url.searchParams.get('type') === 'email') return json({ templates })
+    if (method === 'GET' && url.pathname.startsWith('/v2/template/')) {
+      const found = templates.find(item => url.pathname === `/v2/template/${item.id}`)
+      if (found) return json(found)
+    }
     if (method === 'GET' && url.pathname === '/v2/notifications' && url.searchParams.has('reference')) {
       const found = accepted.get(url.searchParams.get('reference'))
       return json({ notifications: found ? [found] : [] })
     }
     if (method === 'POST' && url.pathname === '/v2/notifications/email') {
       const body = JSON.parse(options?.body ?? (input instanceof Request ? await input.text() : '{}'))
-      if (!body || typeof body.email_address !== 'string' || !body.email_address.includes('@') || body.template_id !== templateId || typeof body.reference !== 'string' || !body.reference || !body.personalisation || ['recipient', 'reference', 'link'].some(name => typeof body.personalisation[name] !== 'string')) return json({ errors: [{ message: 'Invalid fixture email payload' }] }, 400)
+      if (!body || typeof body.email_address !== 'string' || !body.email_address.includes('@') || !templates.some(item => item.id === body.template_id) || typeof body.reference !== 'string' || !body.reference || !body.personalisation || ['recipient', 'reference', 'link'].some(name => typeof body.personalisation[name] !== 'string')) return json({ errors: [{ message: 'Invalid fixture email payload' }] }, 400)
       const tracePath = process.env.GCS_E2E_NOTIFICATION_TRACE
       if (!tracePath) throw new Error('GC Notify send fixture requires an isolated trace path')
       const notificationId = randomUUID()

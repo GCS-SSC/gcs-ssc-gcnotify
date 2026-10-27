@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { apiKey, templateId, fixtureFetch } from '../fixtures/gcnotify-fetch.mjs'
+import { apiKey, templateId, alternateTemplateId, fixtureFetch } from '../fixtures/gcnotify-fetch.mjs'
 const origin = 'https://api.notification.canada.ca'
 const auth = { Authorization: `ApiKey-v1 ${apiKey}` }
 const dirs = []
@@ -21,6 +21,7 @@ describe('managed browser transport fixture', () => {
     const tracePath = join(dir, 'trace.ndjson'); vi.stubEnv('GCS_E2E_NOTIFICATION_TRACE', tracePath)
     const fetcher = fixtureFetch(vi.fn())
     expect((await (await fetcher(`${origin}/v2/templates?type=email`, { headers: auth })).json()).templates[0].id).toBe(templateId)
+    expect((await (await fetcher(`${origin}/v2/template/${alternateTemplateId}`, { headers: auth })).json()).name).toBe('Alternate approval / Autre approbation')
     expect((await (await fetcher(`${origin}/v2/template/${templateId}`, { headers: auth })).json()).personalisation).toHaveProperty('link')
     const body = { email_address: 'synthetic@example.ca', template_id: templateId, reference: 'gcs-ssc:test', personalisation: { recipient: 'Synthetic', reference: 'TEST', link: 'https://example.ca/en/home' }, ignored: 'must not be logged' }
     const result = await fetcher(`${origin}/v2/notifications/email`, { method: 'POST', headers: auth, body: JSON.stringify(body) })

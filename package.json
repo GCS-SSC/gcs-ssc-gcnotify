@@ -1,6 +1,6 @@
 {
   "name": "@gcs-ssc/gcs-ssc-gcnotify",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
-    "@gcs-ssc/extensions": "https://github.com/GCS-SSC/gcs-ssc-extensions/releases/download/v0.3.21/gcs-ssc-extensions-0.3.21.tgz",
+    "@gcs-ssc/extensions": "https://github.com/GCS-SSC/gcs-ssc-extensions/releases/download/v0.3.22/gcs-ssc-extensions-0.3.22.tgz",
     "kysely": "^0.28.11",
     "zod": "^4.3.6"
   },
