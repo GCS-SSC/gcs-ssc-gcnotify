@@ -118,10 +118,13 @@ describe('provider/configuration boundary', () => {
   it('resolves only explicit Stream mappings and rejects superseded Agency shapes', () => {
     const mapping = { templateId, notifierId: 'approval.action_required', personalisation: { name: 'recipient_name' } }
     const streamConfig = { mappings: [mapping] }
+    expect(adapter.resolveMapping({ agencyConfig: {}, streamId: '118', streamConfig: { mappings: [{ ...mapping, recipientEmail: 'host_email_field' }] }, notifierId: mapping.notifierId })).toEqual({ templateId, recipientEmail: 'host_email_field', personalisation: mapping.personalisation })
     expect(adapter.validateAgencyConfig({})).toEqual({})
     expect(() => adapter.validateAgencyConfig({ mappings: {} })).toThrow()
     expect(adapter.validateStreamConfig(streamConfig)).toEqual(streamConfig)
     expect(adapter.resolveMapping({ agencyConfig: {}, streamId: '118', streamConfig, notifierId: mapping.notifierId })).toEqual({ templateId, personalisation: mapping.personalisation })
+    const localizedValue = { name: { fieldId: 'host_name', locale: 'fr' } }
+    expect(adapter.resolveMapping({ agencyConfig: {}, streamId: '118', streamConfig: { mappings: [{ ...mapping, personalisation: localizedValue }] }, notifierId: mapping.notifierId })).toEqual({ templateId, personalisation: localizedValue })
     const zoned = { name: { fieldId: 'host_date', timeZone: 'America/Toronto' } }
     expect(adapter.resolveMapping({ agencyConfig: {}, streamId: '118', streamConfig: { mappings: [{ ...mapping, personalisation: zoned }] }, notifierId: mapping.notifierId })).toEqual({ templateId, personalisation: zoned })
     expect(adapter.resolveMapping({ agencyConfig: {}, streamId: '119', streamConfig: {}, notifierId: mapping.notifierId })).toBeNull()
@@ -132,6 +135,22 @@ describe('provider/configuration boundary', () => {
     expect(CredentialSchema.safeParse({ apiKey: 'x' }).success).toBe(false)
     expect(StreamConfigSchema.safeParse({ mappings: [mapping, mapping] }).success).toBe(false)
     expect(StreamConfigSchema.safeParse({ mappings: [mapping, { ...mapping, notifierId: 'another.host.notifier' }] }).success).toBe(true)
+  })
+  it.each(['de', null, 17])('reports a malformed temporal locale at its exact full-schema path: %s', locale => {
+    const personalisation = {
+      recipient: 'recipient_name', reference: 'item_reference', link: 'approval_url',
+      date_en: { fieldId: 'today_date', timeZone: 'UTC', locale }, date_fr: { fieldId: 'today_date', timeZone: 'UTC', locale: 'fr' },
+      time_en: { fieldId: 'current_time', timeZone: 'America/Toronto', locale: 'en' }, time_fr: { fieldId: 'current_time', timeZone: 'UTC', locale: 'fr' },
+      agency_en: { fieldId: 'agency_name', locale: 'en' }, agency_fr: { fieldId: 'agency_name', locale: 'fr' },
+      program_en: { fieldId: 'program_name', locale: 'en' }, program_fr: { fieldId: 'program_name', locale: 'fr' },
+      stream_en: { fieldId: 'stream_name', locale: 'en' }, stream_fr: { fieldId: 'stream_name', locale: 'fr' },
+      agreement: 'agreement_number', assigned_name: 'assigned_user_name', assigned_email: 'assigned_user_email'
+    }
+    const mapping = { templateId, notifierId: 'approval.action_required', recipientEmail: 'assigned_user_email', personalisation }
+    const config = { mappings: [mapping] }
+    expect(() => adapter.validateStreamConfig(config)).toThrowError(expect.objectContaining({ details: expect.arrayContaining([expect.objectContaining({ path: 'mappings.0.personalisation.date_en.locale' })]) }))
+    const legacy = { ...config, mappings: [{ ...mapping, personalisation: { ...personalisation, date_en: { fieldId: 'today_date', timeZone: 'UTC' } } }] }
+    expect(adapter.validateStreamConfig(legacy)).toEqual(legacy)
   })
   it('rejects unavailable credentials and missing required mapped fields', async () => {
     await expect(adapter.prepareDelivery({ ...context(), secrets: { get: async () => null } })).rejects.toMatchObject({ statusCode: 409 })

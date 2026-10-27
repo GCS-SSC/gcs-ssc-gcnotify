@@ -17,10 +17,10 @@ const host = useHostApi()
 const toast = useExtensionToast()
 const confirm = useExtensionConfirmDialog()
 const BilingualSchema = z.object({ en: z.string(), fr: z.string() })
-const CatalogSchema = z.object({ notifiers: z.array(z.object({ id: z.string(), name: BilingualSchema, fields: z.array(z.object({ id: z.string(), name: BilingualSchema, group: z.object({ id: z.string(), name: BilingualSchema }), type: z.enum(['text', 'date', 'time']) })) })) })
+const CatalogSchema = z.object({ notifiers: z.array(z.object({ id: z.string(), name: BilingualSchema, fields: z.array(z.object({ id: z.string(), name: BilingualSchema, group: z.object({ id: z.string(), name: BilingualSchema }), type: z.enum(['text', 'email', 'localized-text', 'date', 'time']) })) })) })
 type Notifier = z.infer<typeof CatalogSchema>['notifiers'][number]
 type Selection = { kind: 'unselected' } | { kind: 'binding'; templateId: string; personalisation: StreamMapping['personalisation'] }
-type EditDraft = { notifier: Notifier; selection: Selection }
+type EditDraft = { notifier: Notifier; recipientEmail: string | null; selection: Selection }
 type Failure = { kind: 'api'; message: string } | { kind: 'generic' }
 const notifiers: Ref<Notifier[]> = ref([])
 const templateCache: Ref<GcsNotificationTemplate[]> = ref([])
@@ -49,6 +49,7 @@ const pagination = ref({ pageIndex: 0, pageSize: 10 })
 const storedConfig = computed(() => StreamConfigSchema.safeParse(config.value))
 const mappings = computed(() => storedConfig.value.data?.mappings ?? [])
 const templateName = (notifierId: string): string => {
+  if (!storedConfig.value.success) return t('invalid')
   const mapping = mappings.value.find(item => item.notifierId === notifierId)
   return mapping ? templateCache.value.find(template => template.id === mapping.templateId)?.name ?? mapping.templateId : t('noMapping')
 }
@@ -61,14 +62,16 @@ const templateOptions = computed(() => [
   ...modalTemplates.value.map(template => ({ value: template.id, label: template.name })),
   ...(binding.value && !selectedTemplate.value ? [{ value: binding.value.templateId, label: binding.value.templateId, disabled: true }] : [])
 ])
-const fieldOptions = computed(() => {
+const groupedFieldOptions = (fields: Notifier['fields']) => {
   const groups = new Map<string, Array<{ type: 'label'; label: string } | { value: string; label: string }>>()
-  for (const field of editing.value?.notifier.fields ?? []) {
+  for (const field of fields) {
     const group = groups.get(field.group.id) ?? [{ type: 'label', label: field.group.name[locale.value] }]
     group.push({ value: field.id, label: field.name[locale.value] }); groups.set(field.group.id, group)
   }
   return [...groups.values()]
-})
+}
+const fieldOptions = computed(() => groupedFieldOptions(editing.value?.notifier.fields ?? []))
+const recipientOptions = computed(() => groupedFieldOptions(editing.value?.notifier.fields.filter(field => field.type === 'email') ?? []))
 const mappedFieldId = (placeholder: string): string | undefined => {
   const value = binding.value?.personalisation[placeholder]
   return typeof value === 'string' ? value : value?.fieldId
@@ -77,19 +80,28 @@ const needsTimeZone = (placeholder: string): boolean => {
   const field = editing.value?.notifier.fields.find(item => item.id === mappedFieldId(placeholder))
   return field?.type === 'date' || field?.type === 'time'
 }
+const needsLocale = (placeholder: string): boolean => {
+  const field = editing.value?.notifier.fields.find(item => item.id === mappedFieldId(placeholder))
+  return field?.type === 'localized-text' || field?.type === 'date' || field?.type === 'time'
+}
+const mappedLocale = (placeholder: string): 'en' | 'fr' | undefined => {
+  const value = binding.value?.personalisation[placeholder]
+  return typeof value === 'object' && 'locale' in value ? value.locale : undefined
+}
+const localeOptions = computed(() => [{ value: 'en', label: t('english') }, { value: 'fr', label: t('french') }])
 const mappedTimeZone = (placeholder: string): string | undefined => {
   const value = binding.value?.personalisation[placeholder]
-  return typeof value === 'object' ? value.timeZone : undefined
+  return typeof value === 'object' && 'timeZone' in value ? value.timeZone : undefined
 }
 const timeZoneOptions = computed(() => {
   const zones = new Set(['UTC', ...Intl.supportedValuesOf('timeZone')])
-  for (const value of Object.values(binding.value?.personalisation ?? {})) if (typeof value === 'object' && isValidTimeZone(value.timeZone)) zones.add(value.timeZone)
+  for (const value of Object.values(binding.value?.personalisation ?? {})) if (typeof value === 'object' && 'timeZone' in value && isValidTimeZone(value.timeZone)) zones.add(value.timeZone)
   return [...zones].sort().map(value => ({ value, label: value }))
 })
 const proposedConfig = computed(() => {
   if (!storedConfig.value.success || !editing.value) return null
   const retained = mappings.value.filter(mapping => mapping.notifierId !== editing.value?.notifier.id)
-  return StreamConfigSchema.safeParse({ mappings: binding.value ? [...retained, { templateId: binding.value.templateId, notifierId: editing.value.notifier.id, personalisation: binding.value.personalisation }] : retained })
+  return StreamConfigSchema.safeParse({ mappings: binding.value ? [...retained, { templateId: binding.value.templateId, notifierId: editing.value.notifier.id, ...(editing.value.recipientEmail === null ? {} : { recipientEmail: editing.value.recipientEmail }), personalisation: binding.value.personalisation }] : retained })
 })
 const mappingIndex = computed(() => mappings.value.filter(mapping => mapping.notifierId !== editing.value?.notifier.id).length)
 const placeholderPath = (placeholder: string): string => `mappings.${mappingIndex.value}.personalisation.${placeholder}`
@@ -99,7 +111,7 @@ let editSession = 0
 let templateSession = 0
 const saving = computed(() => saveRequest.value?.session === editSession)
 const busy = computed(() => saving.value || unlinkRequest.value !== null)
-const canSave = computed(() => Boolean(streamEnabled && editing.value && !busy.value && binding.value && selectedTemplate.value && !templatesLoading.value && !templateFailure.value))
+const canSave = computed(() => Boolean(streamEnabled && storedConfig.value.success && editing.value && !busy.value && binding.value && selectedTemplate.value && !templatesLoading.value && !templateFailure.value))
 const isMapped = (notifierId: string): boolean => mappings.value.some(mapping => mapping.notifierId === notifierId)
 const closeEditor = () => {
   editSession += 1; templateSession += 1
@@ -129,11 +141,17 @@ const loadTemplates = async () => {
   }
 }
 const openEditor = (notifier: Notifier) => {
-  if (busy.value) return
+  if (busy.value || !storedConfig.value.success) return
   closeEditor()
   const saved = mappings.value.find(mapping => mapping.notifierId === notifier.id)
-  editing.value = { notifier, selection: saved ? { kind: 'binding', templateId: saved.templateId, personalisation: Object.fromEntries(Object.entries(saved.personalisation).map(([placeholder, value]) => [placeholder, typeof value === 'string' ? value : { ...value }])) } : { kind: 'unselected' } }
+  editing.value = { notifier, recipientEmail: saved?.recipientEmail ?? null, selection: saved ? { kind: 'binding', templateId: saved.templateId, personalisation: Object.fromEntries(Object.entries(saved.personalisation).map(([placeholder, value]) => [placeholder, typeof value === 'string' ? value : { ...value }])) } : { kind: 'unselected' } }
   void loadTemplates()
+}
+const setRecipient = (value: unknown) => {
+  if (!editing.value) return
+  editing.value.recipientEmail = typeof value === 'string' && editing.value.notifier.fields.some(field => field.type === 'email' && field.id === value) ? value : null
+  const next = { ...fieldErrors.value }; delete next[`mappings.${mappingIndex.value}.recipientEmail`]; fieldErrors.value = next
+  if (!Object.keys(next).length) saveFailure.value = null
 }
 const chooseTemplate = (value: unknown) => {
   if (!editing.value || typeof value !== 'string' || !modalTemplates.value.some(template => template.id === value)) return
@@ -145,16 +163,27 @@ const setField = (placeholder: string, value: unknown) => {
   const field = editing.value?.notifier.fields.find(item => item.id === value)
   if (field && typeof value === 'string') {
     if (mappedFieldId(placeholder) === value) return
-    binding.value.personalisation[placeholder] = field.type === 'text' ? value : { fieldId: value, timeZone: '' }
+    binding.value.personalisation[placeholder] = field.type === 'date' || field.type === 'time' ? { fieldId: value, timeZone: '' } : value
   } else delete binding.value.personalisation[placeholder]
-  const next = { ...fieldErrors.value }; delete next[placeholderPath(placeholder)]; delete next[`${placeholderPath(placeholder)}.timeZone`]; fieldErrors.value = next
+  const next = { ...fieldErrors.value }; delete next[placeholderPath(placeholder)]; delete next[`${placeholderPath(placeholder)}.timeZone`]; delete next[`${placeholderPath(placeholder)}.locale`]; fieldErrors.value = next
   if (!Object.keys(next).length) saveFailure.value = null
 }
 const setTimeZone = (placeholder: string, value: unknown) => {
   const mapping = binding.value?.personalisation[placeholder]
-  if (typeof mapping !== 'object') return
-  mapping.timeZone = typeof value === 'string' ? value : ''
+  if (!binding.value || typeof mapping !== 'object' || !('timeZone' in mapping)) return
+  binding.value.personalisation[placeholder] = { ...mapping, timeZone: typeof value === 'string' ? value : '' }
   const next = { ...fieldErrors.value }; delete next[`${placeholderPath(placeholder)}.timeZone`]; fieldErrors.value = next
+  if (!Object.keys(next).length) saveFailure.value = null
+}
+const setLocale = (placeholder: string, value: unknown) => {
+  if (!binding.value) return
+  const mapping = binding.value.personalisation[placeholder]
+  if (!mapping) return
+  if (value === 'en' || value === 'fr') binding.value.personalisation[placeholder] = typeof mapping === 'string' ? { fieldId: mapping, locale: value } : { ...mapping, locale: value }
+  else if (typeof mapping === 'string') binding.value.personalisation[placeholder] = mapping
+  else if ('timeZone' in mapping) binding.value.personalisation[placeholder] = { fieldId: mapping.fieldId, timeZone: mapping.timeZone }
+  else binding.value.personalisation[placeholder] = mapping.fieldId
+  const next = { ...fieldErrors.value }; delete next[`${placeholderPath(placeholder)}.locale`]; fieldErrors.value = next
   if (!Object.keys(next).length) saveFailure.value = null
 }
 const loadCatalog = async () => {
@@ -198,7 +227,7 @@ const save = async () => {
   }
 }
 const unlink = async (notifier: Notifier) => {
-  if (!streamEnabled || busy.value || editing.value || !isMapped(notifier.id)) return
+  if (!streamEnabled || !storedConfig.value.success || busy.value || editing.value || !isMapped(notifier.id)) return
   const request: { scope: number; controller: AbortController | null } = { scope: scopeSession, controller: null }
   unlinkRequest.value = request
   try {
@@ -230,6 +259,7 @@ onBeforeUnmount(() => { scopeSession += 1; unlinkRequest.value?.controller?.abor
 </script>
 
 <template>
+  <ExtensionAlert v-if="!storedConfig.success" role="alert" color="error" :title="t('invalid')" />
   <ExtensionAlert v-if="!streamEnabled" color="warning" :title="t('streamDisabled')" />
   <ExtensionResourceLayoutPage data-field-scope="extension.gcs-ssc-gcnotify.stream-config" data-field-container="Search and pagination are optional local notifier-list filters, not persisted configuration." v-model:search="search" v-model:pagination="pagination" :data="visibleRows" :columns="columns" :total-records="filteredRows.length" :loading="loading" :request-status="loading ? 'pending' : loadFailed && !notifiers.length ? 'error' : 'success'" :show-button="false" @retry="loadCatalog">
     <template #name-cell="{ row }">
@@ -239,30 +269,38 @@ onBeforeUnmount(() => { scopeSession += 1; unlinkRequest.value?.controller?.abor
     <template #template-cell="{ row }">{{ templateName(row.original.id) }}</template>
     <template #actions-cell="{ row }">
       <div class="flex items-center gap-2">
-        <ExtensionButton icon="i-lucide-edit-3" color="neutral" variant="ghost" size="sm" :aria-label="t('editNotifier', { notifier: row.original.name[locale] })" :disabled="!streamEnabled || loading || busy" @click="openEditor(row.original)" />
-        <ExtensionButton v-if="isMapped(row.original.id)" icon="i-lucide-unlink" color="error" variant="ghost" size="sm" :aria-label="t('unlinkNotifier', { notifier: row.original.name[locale] })" :disabled="!streamEnabled || loading || busy" @click="unlink(row.original)" />
+        <ExtensionButton icon="i-lucide-edit-3" color="neutral" variant="ghost" size="sm" :aria-label="t('editNotifier', { notifier: row.original.name[locale] })" :disabled="!streamEnabled || !storedConfig.success || loading || busy" @click="openEditor(row.original)" />
+        <ExtensionButton v-if="isMapped(row.original.id)" icon="i-lucide-unlink" color="error" variant="ghost" size="sm" :aria-label="t('unlinkNotifier', { notifier: row.original.name[locale] })" :disabled="!streamEnabled || !storedConfig.success || loading || busy" @click="unlink(row.original)" />
       </div>
     </template>
   </ExtensionResourceLayoutPage>
-  <ExtensionModal :open="editing !== null" :title="editing ? t('editNotifier', { notifier: editing.notifier.name[locale] }) : t('editMapping')" :description="t('chooseTemplateHelp')" :dismissible="!saving" :close="saving ? false : undefined" :ui="{ content: 'sm:max-w-2xl', body: 'max-h-[60vh] overflow-y-auto' }" @update:open="(value: boolean) => value ? undefined : closeEditor()">
+  <ExtensionModal :open="editing !== null" :title="editing ? t('editNotifier', { notifier: editing.notifier.name[locale] }) : t('editMapping')" :description="t('chooseTemplateHelp')" :dismissible="!saving" :close="saving ? false : undefined" :ui="{ content: 'sm:max-w-2xl', body: 'max-h-[min(60vh,32rem)] overflow-y-auto' }" @update:open="(value: boolean) => value ? undefined : closeEditor()">
     <template #body>
-      <div v-if="editing" ref="mappingFields" class="space-y-4" data-field-scope="extension.gcs-ssc-gcnotify.stream-mapping-modal">
+      <div v-if="editing" ref="mappingFields" class="space-y-3" data-field-scope="extension.gcs-ssc-gcnotify.stream-mapping-modal">
         <ExtensionAlert v-if="templateFailure" color="error" :title="t('templateLoadFailed')" :description="templateFailureMessage">
           <template #actions><ExtensionButton :label="t('retryTemplates')" :disabled="templatesLoading || saving" @click="loadTemplates" /></template>
         </ExtensionAlert>
+        <ExtensionFormField :label="t('recipientEmail')" :description="t('recipientHelp')" :name="`mappings.${mappingIndex}.recipientEmail`" :error="fieldErrors[`mappings.${mappingIndex}.recipientEmail`]" required data-ui-target="extension.gcs-ssc-gcnotify.stream-config.recipient-email">
+          <ExtensionSelectMenu :model-value="editing.recipientEmail" :items="recipientOptions" :placeholder="t('chooseRecipient')" :aria-invalid="Boolean(fieldErrors[`mappings.${mappingIndex}.recipientEmail`]) || undefined" value-key="value" :disabled="saving" required aria-required="true" @update:model-value="setRecipient" />
+        </ExtensionFormField>
         <ExtensionFormField :label="t('template')" :name="`mappings.${mappingIndex}.templateId`" :error="fieldErrors[`mappings.${mappingIndex}.templateId`]" required data-ui-target="extension.gcs-ssc-gcnotify.stream-config.template">
           <ExtensionSelectMenu :model-value="binding?.templateId" :aria-invalid="Boolean(fieldErrors[`mappings.${mappingIndex}.templateId`]) || undefined" :items="templateOptions" :placeholder="t('chooseTemplate')" :loading="templatesLoading" value-key="value" :disabled="templatesLoading || Boolean(templateFailure) || saving" required aria-required="true" @update:model-value="chooseTemplate" />
         </ExtensionFormField>
         <ExtensionAlert v-if="templateUnavailable" color="warning" :title="t('templateUnavailable')" />
         <template v-if="binding && selectedTemplate && !templateFailure">
-          <template v-for="placeholder in selectedTemplate.requiredPersonalisation" :key="placeholder">
-          <ExtensionFormField :label="t('mapping', { placeholder })" :name="placeholderPath(placeholder)" :error="fieldErrors[placeholderPath(placeholder)]" required data-ui-target="extension.gcs-ssc-gcnotify.stream-config.placeholder">
-            <ExtensionSelectMenu :model-value="mappedFieldId(placeholder)" :aria-invalid="Boolean(fieldErrors[placeholderPath(placeholder)]) || undefined" :items="fieldOptions" value-key="value" :disabled="saving || templatesLoading" required aria-required="true" @update:model-value="setField(placeholder, $event)" />
-          </ExtensionFormField>
-            <ExtensionFormField v-if="needsTimeZone(placeholder)" :label="t('timeZoneFor', { placeholder })" :name="`${placeholderPath(placeholder)}.timeZone`" :error="fieldErrors[`${placeholderPath(placeholder)}.timeZone`]" required data-ui-target="extension.gcs-ssc-gcnotify.stream-config.time-zone">
-              <ExtensionSelectMenu :model-value="mappedTimeZone(placeholder)" :items="timeZoneOptions" :placeholder="t('chooseTimeZone')" :aria-invalid="Boolean(fieldErrors[`${placeholderPath(placeholder)}.timeZone`]) || undefined" value-key="value" :disabled="saving || templatesLoading" required aria-required="true" @update:model-value="setTimeZone(placeholder, $event)" />
+          <div v-for="placeholder in selectedTemplate.requiredPersonalisation" :key="placeholder" class="space-y-3">
+            <ExtensionFormField :label="t('mapping', { placeholder })" :name="placeholderPath(placeholder)" :error="fieldErrors[placeholderPath(placeholder)]" required data-ui-target="extension.gcs-ssc-gcnotify.stream-config.placeholder">
+              <ExtensionSelectMenu :model-value="mappedFieldId(placeholder)" :aria-invalid="Boolean(fieldErrors[placeholderPath(placeholder)]) || undefined" :items="fieldOptions" value-key="value" :disabled="saving || templatesLoading" required aria-required="true" @update:model-value="setField(placeholder, $event)" />
             </ExtensionFormField>
-          </template>
+            <div v-if="needsLocale(placeholder) || needsTimeZone(placeholder)" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ExtensionFormField v-if="needsLocale(placeholder)" :label="t('localeFor', { placeholder })" :name="`${placeholderPath(placeholder)}.locale`" :error="fieldErrors[`${placeholderPath(placeholder)}.locale`]" required data-ui-target="extension.gcs-ssc-gcnotify.stream-config.locale">
+                <ExtensionSelectMenu :model-value="mappedLocale(placeholder)" :items="localeOptions" :placeholder="t('chooseLocale')" :aria-invalid="Boolean(fieldErrors[`${placeholderPath(placeholder)}.locale`]) || undefined" value-key="value" :disabled="saving || templatesLoading" required aria-required="true" @update:model-value="setLocale(placeholder, $event)" />
+              </ExtensionFormField>
+              <ExtensionFormField v-if="needsTimeZone(placeholder)" :label="t('timeZoneFor', { placeholder })" :name="`${placeholderPath(placeholder)}.timeZone`" :error="fieldErrors[`${placeholderPath(placeholder)}.timeZone`]" required data-ui-target="extension.gcs-ssc-gcnotify.stream-config.time-zone">
+                <ExtensionSelectMenu :model-value="mappedTimeZone(placeholder)" :items="timeZoneOptions" :placeholder="t('chooseTimeZone')" :aria-invalid="Boolean(fieldErrors[`${placeholderPath(placeholder)}.timeZone`]) || undefined" value-key="value" :disabled="saving || templatesLoading" required aria-required="true" @update:model-value="setTimeZone(placeholder, $event)" />
+              </ExtensionFormField>
+            </div>
+          </div>
         </template>
         <ExtensionAlert v-if="saveFailure" color="error" role="alert" :title="t('saveFailed')" :description="saveFailureMessage" />
       </div>

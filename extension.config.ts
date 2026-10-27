@@ -1,6 +1,6 @@
 import { defineGcsAuditOwnership, defineGcsExtension } from '@gcs-ssc/extensions'
 export default defineGcsExtension({
-  key: 'gcs-ssc-gcnotify', sdkVersion: '^0.3.24', configurationAccess: 'manager',
+  key: 'gcs-ssc-gcnotify', sdkVersion: '^0.3.25', configurationAccess: 'manager',
   name: { en: 'GC Notify', fr: 'Notification GC' },
   description: { en: 'Sends Agency approval notifications using bilingual GC Notify email templates.', fr: 'Envoie les notifications d’approbation de l’organisation avec les modèles de courriel bilingues de Notification GC.' },
   requiredHostCapabilities: ['configuration-access', 'audit-ownership', 'agency-config', 'stream-config-page', 'extension-ui', 'extension-api-client', 'host-api-client', 'server-handlers', 'server-handler-rbac', 'extension-secrets', 'extension-lifecycle-hooks', 'notification-provider'],

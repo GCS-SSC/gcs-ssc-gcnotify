@@ -13,12 +13,12 @@ The Agency editor contains only credential status, a password input, and Save. A
 
 1. Enable **GC Notify** in the owning Transfer Payment Stream's Extensions section.
 2. Choose **Configure** to open the existing full-page Stream configuration. The page lists the host notifiers, including those without a template mapping.
-3. Choose the **Edit** icon in a notifier’s Actions column. The medium dialog loads GC Notify email templates asynchronously. Select a template by name and map every required placeholder to one of that notifier's host fields. Field choices use the host's bilingual groups, such as System and Approval. Date and time fields require an explicit IANA time zone for each placeholder; no zone is chosen automatically.
+3. Choose the **Edit** icon in a notifier’s Actions column. The medium dialog loads GC Notify email templates asynchronously. Explicitly select the host email field used for the recipient, select a template by name and map every required placeholder to one of that notifier's host fields. Field choices use the host's bilingual groups, such as System and Approval. Language-sensitive names, dates and times require an explicit English or French choice for each placeholder. Date and time fields also require an explicit IANA time zone; neither choice is inferred or selected automatically.
 4. Choose **Save** in the dialog. Repeat for other notifiers as needed. Different notifiers can use the same template, while each notifier has one template per Stream.
 
-The main page uses the same table layout as Agreements. Template and placeholder controls appear only in the selected notifier's dialog. Opening the page does not request remote templates. A failed template request can be retried in the dialog; an unavailable saved template must be replaced, or unlinked from the main table. Cancel or dismissal discards the local draft. Mapped notifier rows provide a separate red unlink icon in Actions. Its confirmation removes only that notifier’s mapping immediately; cancelling leaves configuration unchanged. The edit dialog has no unlink action. Save persists the mappings and closes the dialog after success; a failed save keeps the draft and associated field errors open. Template wording, bilingual content, and branding remain managed in GC Notify. Only email is supported.
+The main page uses the same table layout as Agreements. Template and placeholder controls appear only in the selected notifier's dialog. Opening the page does not request remote templates. A failed template request can be retried in the dialog; an unavailable saved template must be replaced, or unlinked from the main table. Cancel or dismissal discards the local draft. Mapped notifier rows provide a separate red unlink icon in Actions. Its confirmation removes only that notifier’s mapping immediately; cancelling leaves configuration unchanged. The edit dialog has no unlink action. The recipient must explicitly map to an email-typed host field. Missing mappings and empty resolved addresses prevent sending; there is no default or fallback. Save persists the mappings and closes the dialog after success; a failed save keeps the draft and associated field errors open. Template wording, bilingual content, and branding remain managed in GC Notify. Only email is supported.
 
-Stream configuration stores `mappings: [{ templateId, notifierId, personalisation }]`. Placeholder keys map to host field identifiers for text, or `{ fieldId, timeZone }` for date and time values. The host formats date values as `YYYY-MM-DD` and time values as 24-hour `HH:mm:ss` in the selected zone, using the same notification-admission instant. The initial host notifier is `approval.action_required`; its catalog supplies `recipient_name`, `item_reference`, `item_title`, and `approval_url`. Other host notifier and field choices come from the host catalog rather than an extension-owned list. Unmapped notifiers send nothing. Each Stream must explicitly enable and configure the provider; Agency configuration is never a mapping fallback.
+Stream configuration stores `mappings: [{ templateId, notifierId, recipientEmail, personalisation }]`. Placeholder keys map to host field identifiers for text, or `{ fieldId, locale }` for language-sensitive text and `{ fieldId, timeZone, locale }` for dates and times. Existing strings and `{ fieldId, timeZone }` mappings remain readable so their language can be repaired explicitly. The host formats date and time values with the selected English or French medium Intl style in the selected zone, using the same notification-admission instant. Agency, program and Stream names use the explicitly selected language. The initial host notifier is `approval.action_required`; its catalog supplies `recipient_name`, `item_reference`, `item_title`, and `approval_url`. Other host notifier and field choices come from the host catalog rather than an extension-owned list. Unmapped notifiers send nothing. Each Stream must explicitly enable and configure the provider; Agency configuration is never a mapping fallback.
 
 Agency Managers manage the key. Stream Managers configure their Stream without needing Agency read access. The template endpoint resolves the Stream's owning Agency server-side and never returns credentials. Host-managed configuration and encrypted secret records retain host audit ownership; the extension creates no tables.
 
@@ -47,4 +47,31 @@ bun run test:coverage
 
 Unit tests exercise the real SDK entrypoints, extension editor/catalog, API request shapes, encrypted-secret handoff, fresh authorization ordering, template validation, rejection handling and ambiguous-send recovery. Coverage thresholds are 80% for lines, statements, branches and functions.
 
-`tests/fixtures/gcnotify-fetch.mjs` is an explicit managed-browser transport fixture. Run an isolated host browser journey with `NODE_OPTIONS=--import=/absolute/path/to/tests/fixtures/gcnotify-fetch.mjs`. It activates only for the host's `.output/server/index.mjs`, delegates unrelated requests, and rejects unexpected GC Notify operations. It supplies two bilingual templates with required `recipient`, `reference` and `link` placeholders; map them to `recipient_name`, `item_reference` and `approval_url`. The fixture API key is exported in that file, is synthetic, and cannot send email. For a complete host queue journey, set `GCS_E2E_NOTIFICATION_TRACE` to an isolated temporary file. The fixture validates email submissions, records the public payload without authorization headers or API keys, and returns an accepted notification ID. The managed runner owns trace cleanup. Fixture-backed verification is separate from a live GC Notify delivery test.
+`tests/fixtures/gcnotify-fetch.mjs` is a managed-browser transport fixture. Run an isolated host browser journey with `NODE_OPTIONS=--import=/absolute/path/to/tests/fixtures/gcnotify-fetch.mjs`. The fixture activates only for the host's `.output/server/index.mjs`, delegates unrelated requests, and rejects unexpected GC Notify operations.
+
+Template A, **Approval required / Approbation requise**, requires all 16 placeholders below. Template B, **Alternate approval / Autre approbation**, requires only `recipient`, `reference`, and `link`.
+
+Choose an email-typed host field, such as `assigned_user_email`, for the required `recipientEmail` mapping. That choice determines the destination address independently of the `recipient` content placeholder. Map the template placeholders as follows:
+
+| Placeholder | Host field | Explicit language | Explicit time zone |
+| --- | --- | --- | --- |
+| `recipient` | `recipient_name` | Not used | Not used |
+| `reference` | `item_reference` | Not used | Not used |
+| `link` | `approval_url` | Not used | Not used |
+| `date_en` | `today_date` | English | `America/Toronto` |
+| `date_fr` | `today_date` | Français | `UTC` |
+| `time_en` | `current_time` | English | `America/Toronto` |
+| `time_fr` | `current_time` | Français | `UTC` |
+| `agency_en` | `agency_name` | English | Not used |
+| `agency_fr` | `agency_name` | Français | Not used |
+| `program_en` | `program_name` | English | Not used |
+| `program_fr` | `program_name` | Français | Not used |
+| `stream_en` | `stream_name` | English | Not used |
+| `stream_fr` | `stream_name` | Français | Not used |
+| `agreement` | `agreement_number` | Not used | Not used |
+| `assigned_name` | `assigned_user_name` | Not used | Not used |
+| `assigned_email` | `assigned_user_email` | Not used | Not used |
+
+Select each language and time zone explicitly in the editor. Placeholder suffixes do not set those choices. Text and email values use field-ID strings. Language-sensitive text uses `{ fieldId, locale }`, and dates and times use `{ fieldId, locale, timeZone }`.
+
+The fixture exports a synthetic API key that cannot send email. For a complete host queue journey, set `GCS_E2E_NOTIFICATION_TRACE` to an isolated temporary file. The fixture validates every required placeholder and records only the approved public payload, without authorization headers or API keys. It returns an accepted notification ID. The managed runner owns trace cleanup. Fixture verification does not send a live GC Notify message.

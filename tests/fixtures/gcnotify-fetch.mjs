@@ -9,7 +9,7 @@ export const apiKey = ['gcntfy', 'browser-fixture', syntheticServiceId, syntheti
 export const templateId = '33333333-3333-4333-8333-333333333333'
 export const alternateTemplateId = '55555555-5555-4555-8555-555555555555'
 const basicPersonalisation = { recipient: { required: true }, reference: { required: true }, link: { required: true } }
-const template = { id: templateId, name: 'Approval required / Approbation requise', type: 'email', personalisation: { ...basicPersonalisation, ...Object.fromEntries(['date_toronto', 'date_utc', 'time_utc', 'agency', 'stream', 'agreement', 'assigned_name', 'assigned_email'].map(name => [name, { required: true }])) } }
+const template = { id: templateId, name: 'Approval required / Approbation requise', type: 'email', personalisation: { ...basicPersonalisation, ...Object.fromEntries(['date_en', 'date_fr', 'time_en', 'time_fr', 'agency_en', 'agency_fr', 'program_en', 'program_fr', 'stream_en', 'stream_fr', 'agreement', 'assigned_name', 'assigned_email'].map(name => [name, { required: true }])) } }
 const alternateTemplate = { ...template, id: alternateTemplateId, name: 'Alternate approval / Autre approbation', personalisation: basicPersonalisation }
 const templates = [template, alternateTemplate]
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } })
