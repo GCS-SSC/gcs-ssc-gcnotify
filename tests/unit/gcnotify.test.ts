@@ -92,6 +92,29 @@ describe('provider/configuration boundary', () => {
     expect(matchesDeliveryIdentity({}, apiKey)).toBe(false)
     expect(await adapter.send({ ...sendInput(), deliveryContext: {} })).toEqual({ kind: 'rejected', retryable: false })
   })
+  it('retries repaired credentials after definitive pre-POST secret failures', async () => {
+    const fetcher = vi.fn().mockImplementation(async (url: string) => response(url.includes('/v2/template/') ? template : { id: notificationId }))
+    vi.stubGlobal('fetch', fetcher)
+    const readSecret = vi.fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ apiKey: 'invalid' })
+      .mockRejectedValueOnce(new Error('secret unavailable'))
+      .mockResolvedValueOnce({ apiKey })
+    const input = { ...sendInput(), secrets: { get: readSecret } }
+    for (let failure = 0; failure < 3; failure += 1) {
+      expect(await adapter.send(input)).toEqual({ kind: 'rejected', retryable: true })
+      expect(fetcher).not.toHaveBeenCalled()
+    }
+    expect(await adapter.send(input)).toEqual({ kind: 'accepted', notificationId })
+    expect(JSON.parse(fetcher.mock.calls[1]?.[1].body).reference).toBe(input.reference)
+  })
+  it('keeps adapter POST failures ambiguous after successful credential resolution', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response(template)).mockRejectedValueOnce(new Error('response lost after POST'))
+    vi.stubGlobal('fetch', fetcher)
+    await expect(adapter.send(sendInput())).rejects.toThrow('response lost after POST')
+    fetcher.mockResolvedValueOnce(response(template)).mockResolvedValueOnce(response({}))
+    await expect(adapter.send(sendInput())).rejects.toThrow()
+  })
   it('validates catalog mappings and resolves only the declared notifier', () => {
     const config = { mappings: { 'approval.action_required': { templateId, personalisation: { name: 'recipient_name' } } } }
     expect(adapter.validateAgencyConfig(config)).toEqual(config)

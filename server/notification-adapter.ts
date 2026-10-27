@@ -23,7 +23,9 @@ export default defineGcsNotificationProviderAdapter({
   listTemplates: async context => await createGcNotifyClient(await keyFor(context), context.signal).listTemplates(),
   getTemplate: async context => await createGcNotifyClient(await keyFor(context), context.signal).getTemplate(context.templateId),
   send: async context => {
-    const key = await keyFor(context)
+    // Credential resolution happens before any external delivery request.
+    const key = await keyFor(context).catch(() => null)
+    if (!key) return { kind: 'rejected', retryable: true }
     if (!matchesDeliveryIdentity(context.deliveryContext, key)) return { kind: 'rejected', retryable: false }
     const client = createGcNotifyClient(key, context.signal)
     // No POST has occurred if current-template validation fails.
