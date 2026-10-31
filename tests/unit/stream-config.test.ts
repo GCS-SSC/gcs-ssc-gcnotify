@@ -4,7 +4,7 @@ import { defineComponent, h, ref } from 'vue'
 import { z } from 'zod'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createExtensionTestUiRuntime } from '@gcs-ssc/extensions/testing'
-import { clearExtensionUiRuntime, setExtensionUiRuntime, ExtensionAlert, ExtensionButton, ExtensionFormField, ExtensionModal, ExtensionResourceLayoutPage, ExtensionSelectMenu, type GcsExtensionConfirmDialogOptions, type GcsExtensionToastNotification } from '@gcs-ssc/extensions/ui'
+import { clearExtensionUiRuntime, setExtensionUiRuntime, ExtensionAlert, ExtensionButton, ExtensionFormField, ExtensionModal, ExtensionResourceLayout, ExtensionSelectMenu, type GcsExtensionConfirmDialogOptions, type GcsExtensionToastNotification } from '@gcs-ssc/extensions/ui'
 import type { GcsExtensionJsonConfig } from '@gcs-ssc/extensions'
 import extension from '../../extension.config'
 import StreamConfig from '../../components/StreamGcNotifyConfig.vue'
@@ -21,7 +21,7 @@ beforeEach(() => {
   locale.value = 'en'; addToast.mockClear(); confirmDialog.mockReset(); confirmDialog.mockResolvedValue(true)
   const runtime = createExtensionTestUiRuntime()
   runtime.composables.useI18n = () => ({ locale, n: String }); runtime.composables.useToast = () => ({ add: addToast }); runtime.composables.useConfirmDialog = () => confirmDialog
-  runtime.components.CommonResourceLayoutPage = runtime.components.CommonCompactTable
+  runtime.components.CommonResourceLayout = runtime.components.CommonCompactTable
   runtime.components.USelectMenu = defineComponent({
     inheritAttrs: false, emits: ['update:modelValue'],
     setup(_props, { attrs, emit }) {
@@ -56,7 +56,7 @@ const savedMapping = { templateId, recipientEmail: 'recipient_email', notifierId
 describe('Stream notifier table and lazy mapping modal', () => {
   it('uses the shared page table with edit icons and no global Save or inline editor', async () => {
     const wrapper = render(); await flushPromises()
-    expect(wrapper.findComponent(ExtensionResourceLayoutPage).exists()).toBe(true)
+    expect(wrapper.findComponent(ExtensionResourceLayout).exists()).toBe(true)
     expect(wrapper.text()).toContain('Approval required'); expect(wrapper.text()).toContain('Other host event'); expect(fetcher.mock.calls.some(call => String(call[0]).endsWith('/templates'))).toBe(false)
     expect(wrapper.findAll('select')).toHaveLength(0); expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     expect(wrapper.findAllComponents(ExtensionButton).some(button => button.vm.$attrs.icon === 'i-lucide-unlink')).toBe(false)

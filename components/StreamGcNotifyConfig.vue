@@ -2,7 +2,7 @@
 import { computed, h, nextTick, onBeforeUnmount, ref, shallowRef, watch, type Ref } from 'vue'
 import { z } from 'zod'
 import { FetchResponseError, type GcsExtensionJsonConfig, type GcsNotificationTemplate, type GcsResolvedExtension } from '@gcs-ssc/extensions'
-import { ExtensionAlert, ExtensionButton, ExtensionFormField, ExtensionModal, ExtensionResourceLayoutPage, ExtensionSaveButton, ExtensionSelectMenu, useExtensionApi, useExtensionConfirmDialog, useExtensionI18n, useExtensionToast, useHostApi } from '@gcs-ssc/extensions/ui'
+import { ExtensionAlert, ExtensionButton, ExtensionFormField, ExtensionModal, ExtensionResourceLayout, ExtensionSaveButton, ExtensionSelectMenu, useExtensionApi, useExtensionConfirmDialog, useExtensionI18n, useExtensionToast, useHostApi } from '@gcs-ssc/extensions/ui'
 import { messages } from '../i18n/messages'
 import { isValidTimeZone, StreamConfigSchema, type StreamMapping } from '../shared/config'
 
@@ -261,7 +261,7 @@ onBeforeUnmount(() => { scopeSession += 1; unlinkRequest.value?.controller?.abor
 <template>
   <ExtensionAlert v-if="!storedConfig.success" role="alert" color="error" :title="t('invalid')" />
   <ExtensionAlert v-if="!streamEnabled" color="warning" :title="t('streamDisabled')" />
-  <ExtensionResourceLayoutPage data-field-scope="extension.gcs-ssc-gcnotify.stream-config" data-field-container="Search and pagination are optional local notifier-list filters, not persisted configuration." v-model:search="search" v-model:pagination="pagination" :data="visibleRows" :columns="columns" :total-records="filteredRows.length" :loading="loading" :request-status="loading ? 'pending' : loadFailed && !notifiers.length ? 'error' : 'success'" :show-button="false" @retry="loadCatalog">
+  <ExtensionResourceLayout layout="page" data-field-scope="extension.gcs-ssc-gcnotify.stream-config" data-field-container="Search and pagination are optional local notifier-list filters, not persisted configuration." v-model:search="search" v-model:pagination="pagination" :data="visibleRows" :columns="columns" :total-records="filteredRows.length" :loading="loading" :request-status="loading ? 'pending' : loadFailed && !notifiers.length ? 'error' : 'success'" :show-button="false" @retry="loadCatalog">
     <template #name-cell="{ row }">
       <div class="font-medium text-highlighted">{{ row.original.name[locale] }}</div>
       <div class="text-xs text-muted">{{ row.original.id }}</div>
@@ -273,7 +273,7 @@ onBeforeUnmount(() => { scopeSession += 1; unlinkRequest.value?.controller?.abor
         <ExtensionButton v-if="isMapped(row.original.id)" icon="i-lucide-unlink" color="error" variant="ghost" size="sm" :aria-label="t('unlinkNotifier', { notifier: row.original.name[locale] })" :disabled="!streamEnabled || !storedConfig.success || loading || busy" @click="unlink(row.original)" />
       </div>
     </template>
-  </ExtensionResourceLayoutPage>
+  </ExtensionResourceLayout>
   <ExtensionModal :open="editing !== null" :title="editing ? t('editNotifier', { notifier: editing.notifier.name[locale] }) : t('editMapping')" :description="t('chooseTemplateHelp')" :dismissible="!saving" :close="saving ? false : undefined" :ui="{ content: 'sm:max-w-4xl', body: 'max-h-[min(60vh,32rem)] overflow-y-auto' }" @update:open="(value: boolean) => value ? undefined : closeEditor()">
     <template #body>
       <div v-if="editing" ref="mappingFields" class="space-y-3" data-field-scope="extension.gcs-ssc-gcnotify.stream-mapping-modal">
