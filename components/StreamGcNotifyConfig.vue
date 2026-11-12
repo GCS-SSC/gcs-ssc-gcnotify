@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { FetchResponseError, type GcsExtensionJsonConfig, type GcsNotificationTemplate, type GcsResolvedExtension } from '@gcs-ssc/extensions'
 import { ExtensionAlert, ExtensionButton, ExtensionFormField, ExtensionModal, ExtensionResourceLayout, ExtensionSaveButton, ExtensionSelectMenu, useExtensionApi, useExtensionConfirmDialog, useExtensionI18n, useExtensionToast, useHostApi } from '@gcs-ssc/extensions/ui'
 import { messages } from '../i18n/messages'
+import { useRequestState } from '../composables/useRequestState'
 import { isValidTimeZone, StreamConfigSchema, type StreamMapping } from '../shared/config'
 
 const { extension, streamId, streamEnabled = false } = defineProps<{
@@ -22,18 +23,21 @@ type Notifier = z.infer<typeof CatalogSchema>['notifiers'][number]
 type Selection = { kind: 'unselected' } | { kind: 'binding'; templateId: string; personalisation: StreamMapping['personalisation'] }
 type EditDraft = { notifier: Notifier; recipientEmail: string | null; selection: Selection }
 type Failure = { kind: 'api'; message: string } | { kind: 'generic' }
-const notifiers: Ref<Notifier[]> = ref([])
 const templateCache: Ref<GcsNotificationTemplate[]> = ref([])
-const modalTemplates: Ref<GcsNotificationTemplate[]> = ref([])
-const editing: Ref<EditDraft | null> = ref(null)
-const loading: Ref<boolean> = ref(false)
-const loadFailed: Ref<boolean> = ref(false)
-const templatesLoading: Ref<boolean> = ref(false)
-const templateFailure: Ref<Failure | null> = ref(null)
-const templateController: Ref<AbortController | null> = ref(null)
-const saveRequest: Ref<{ session: number; controller: AbortController } | null> = ref(null)
+type EditorState = { kind: 'closed' } | { kind: 'editing'; session: number; draft: EditDraft } | { kind: 'saving'; session: number; draft: EditDraft; controller: AbortController }
+const editorState: Ref<EditorState> = ref({ kind: 'closed' })
+const editing = computed(() => editorState.value.kind === 'closed' ? null : editorState.value.draft)
+const catalogRequest = useRequestState<Notifier[]>()
+const notifiers = computed(() => catalogRequest.data.value ?? [])
+const templateRequest = useRequestState<GcsNotificationTemplate[], Failure>()
+const loading = catalogRequest.pending
+const loadFailed = computed(() => catalogRequest.state.value.kind === 'error')
+const modalTemplates = computed(() => templateRequest.data.value ?? [])
+const templatesLoading = templateRequest.pending
+const templateFailure = templateRequest.error
 const saveFailure: Ref<Failure | null> = ref(null)
-const unlinkRequest: Ref<{ scope: number; controller: AbortController | null } | null> = shallowRef(null)
+type UnlinkState = { kind: 'idle' } | { kind: 'confirming'; scope: number } | { kind: 'pending'; scope: number; controller: AbortController }
+const unlinkRequest = shallowRef<UnlinkState>({ kind: 'idle' })
 const fieldErrors: Ref<Record<string, string>> = ref({})
 const mappingFields: Ref<HTMLElement | null> = ref(null)
 const saveFailureMessage = computed(() => saveFailure.value?.kind === 'api' ? saveFailure.value.message : saveFailure.value ? t('saveFailed') : '')
@@ -108,43 +112,35 @@ const placeholderPath = (placeholder: string): string => `mappings.${mappingInde
 const columns = computed(() => [{ id: 'name', header: t('hostNotifier') }, { id: 'template', header: t('template') }, { id: 'actions', header: t('actions') }])
 let scopeSession = 0
 let editSession = 0
-let templateSession = 0
-const saving = computed(() => saveRequest.value?.session === editSession)
-const busy = computed(() => saving.value || unlinkRequest.value !== null)
+const saving = computed(() => editorState.value.kind === 'saving')
+const busy = computed(() => saving.value || unlinkRequest.value.kind !== 'idle')
 const canSave = computed(() => Boolean(streamEnabled && storedConfig.value.success && editing.value && !busy.value && binding.value && selectedTemplate.value && !templatesLoading.value && !templateFailure.value))
 const isMapped = (notifierId: string): boolean => mappings.value.some(mapping => mapping.notifierId === notifierId)
 const closeEditor = () => {
-  editSession += 1; templateSession += 1
-  saveRequest.value?.controller.abort(); saveRequest.value = null
-  templateController.value?.abort(); templateController.value = null
-  editing.value = null; modalTemplates.value = []; templatesLoading.value = false; templateFailure.value = null; saveFailure.value = null; fieldErrors.value = {}
+  editSession += 1
+  if (editorState.value.kind === 'saving') editorState.value.controller.abort()
+  editorState.value = { kind: 'closed' }
+  templateRequest.reset(); saveFailure.value = null; fieldErrors.value = {}
 }
+const requestCloseEditor = () => { if (!saving.value) closeEditor() }
 const loadTemplates = async () => {
   if (!editing.value || templatesLoading.value || saving.value) return
-  const currentScope = scopeSession
-  const currentEdit = editSession
-  const currentTemplate = ++templateSession
-  const controller = new AbortController()
-  templateController.value?.abort(); templateController.value = controller
-  templatesLoading.value = true; templateFailure.value = null
+  const request = templateRequest.begin()
+  if (!request) return
   try {
-    const remote = await api.value.get<{ templates: GcsNotificationTemplate[] }>(`/streams/${streamId}/templates`, { signal: controller.signal })
-    if (currentScope !== scopeSession || currentEdit !== editSession || currentTemplate !== templateSession || !editing.value) return
-    modalTemplates.value = remote.templates; templateCache.value = remote.templates
+    const remote = await api.value.get<{ templates: GcsNotificationTemplate[] }>(`/streams/${streamId}/templates`, { signal: request.signal })
+    if (templateRequest.succeed(request, remote.templates)) templateCache.value = remote.templates
   } catch (error: unknown) {
-    if (currentScope !== scopeSession || currentEdit !== editSession || currentTemplate !== templateSession || !editing.value) return
     const parsed = apiFailure(error)
     const message = parsed?.details?.find(detail => detail.message)?.message ?? parsed?.message
-    templateFailure.value = message ? { kind: 'api', message } : { kind: 'generic' }
-  } finally {
-    if (currentScope === scopeSession && currentEdit === editSession && currentTemplate === templateSession) { templatesLoading.value = false; templateController.value = null }
+    templateRequest.fail(request, message ? { kind: 'api', message } : { kind: 'generic' })
   }
 }
 const openEditor = (notifier: Notifier) => {
   if (busy.value || !storedConfig.value.success) return
   closeEditor()
   const saved = mappings.value.find(mapping => mapping.notifierId === notifier.id)
-  editing.value = { notifier, recipientEmail: saved?.recipientEmail ?? null, selection: saved ? { kind: 'binding', templateId: saved.templateId, personalisation: Object.fromEntries(Object.entries(saved.personalisation).map(([placeholder, value]) => [placeholder, typeof value === 'string' ? value : { ...value }])) } : { kind: 'unselected' } }
+  editorState.value = { kind: 'editing', session: editSession, draft: { notifier, recipientEmail: saved?.recipientEmail ?? null, selection: saved ? { kind: 'binding', templateId: saved.templateId, personalisation: Object.fromEntries(Object.entries(saved.personalisation).map(([placeholder, value]) => [placeholder, typeof value === 'string' ? value : { ...value }])) } : { kind: 'unselected' } } }
   void loadTemplates()
 }
 const setRecipient = (value: unknown) => {
@@ -188,13 +184,12 @@ const setLocale = (placeholder: string, value: unknown) => {
 }
 const loadCatalog = async () => {
   if (!streamEnabled || loading.value) return
-  const current = scopeSession
-  loading.value = true; loadFailed.value = false
+  const request = catalogRequest.begin()
+  if (!request) return
   try {
-    const parsed = CatalogSchema.parse(await host.get<unknown>(`/api/extensions/streams/${streamId}/notifiers`))
-    if (current === scopeSession) notifiers.value = parsed.notifiers
-  } catch { if (current === scopeSession) loadFailed.value = true }
-  finally { if (current === scopeSession) loading.value = false }
+    const parsed = CatalogSchema.parse(await host.get<unknown>(`/api/extensions/streams/${streamId}/notifiers`, { signal: request.signal }))
+    catalogRequest.succeed(request, parsed.notifiers)
+  } catch (error: unknown) { catalogRequest.fail(request, error) }
 }
 const save = async () => {
   if (!editing.value || !canSave.value) return
@@ -204,12 +199,12 @@ const save = async () => {
   const currentEdit = editSession
   const controller = new AbortController()
   const timeout = globalThis.setTimeout(() => controller.abort(), 15_000)
-  saveRequest.value = { session: currentEdit, controller }; saveFailure.value = null; fieldErrors.value = {}
+  editorState.value = { kind: 'saving', session: currentEdit, draft: editing.value, controller }; saveFailure.value = null; fieldErrors.value = {}
   try {
     await host.patch(`/api/extensions/streams/${streamId}`, { extensionKey: extension.key, enabled: streamEnabled, config: parsed.data }, { signal: controller.signal, headers: { 'accept-language': locale.value } })
     if (currentScope !== scopeSession || currentEdit !== editSession || !editing.value) return
     config.value = parsed.data
-    saveRequest.value = null; closeEditor()
+    closeEditor()
     toast.add({ title: () => h('span', t('successNotice')), description: () => h('span', t('mappingsSaved')), color: 'success' })
   } catch (error: unknown) {
     if (currentScope !== scopeSession || currentEdit !== editSession || !editing.value) return
@@ -218,27 +213,29 @@ const save = async () => {
     saveFailure.value = message ? { kind: 'api', message } : { kind: 'generic' }
     fieldErrors.value = Object.fromEntries((parsedError?.details ?? []).map(detail => [detail.path, detail.message]))
     toast.add({ title: () => h('span', t('saveFailed')), description: saveFailure.value.kind === 'api' ? saveFailure.value.message : () => h('span', t('saveFailed')), color: 'error' })
-    saveRequest.value = null
+    if (editorState.value.kind === 'saving' && editorState.value.controller === controller) editorState.value = { kind: 'editing', session: currentEdit, draft: editorState.value.draft }
     await nextTick()
     if (currentScope === scopeSession && currentEdit === editSession) mappingFields.value?.querySelector<HTMLElement>('[role="combobox"][aria-invalid="true"], select[aria-invalid="true"]')?.focus()
   } finally {
     globalThis.clearTimeout(timeout)
-    if (saveRequest.value?.session === currentEdit) saveRequest.value = null
+    if (editorState.value.kind === 'saving' && editorState.value.controller === controller) editorState.value = { kind: 'editing', session: currentEdit, draft: editorState.value.draft }
   }
 }
 const unlink = async (notifier: Notifier) => {
   if (!streamEnabled || !storedConfig.value.success || busy.value || editing.value || !isMapped(notifier.id)) return
-  const request: { scope: number; controller: AbortController | null } = { scope: scopeSession, controller: null }
+  let request: Exclude<UnlinkState, { kind: 'idle' }> = { kind: 'confirming', scope: scopeSession }
   unlinkRequest.value = request
   try {
     const approved = await confirm({ title: t('unlinkTitle'), description: t('unlinkConfirm', { notifier: notifier.name[locale.value] }), confirmLabel: t('unlink'), cancelLabel: t('cancel'), confirmColor: 'error' })
     if (!approved || request.scope !== scopeSession || unlinkRequest.value !== request || !streamEnabled) return
     const parsed = StreamConfigSchema.safeParse({ mappings: mappings.value.filter(mapping => mapping.notifierId !== notifier.id) })
     if (!storedConfig.value.success || !parsed.success) throw new Error('Invalid Stream configuration')
-    request.controller = new AbortController()
-    const timeout = globalThis.setTimeout(() => request.controller?.abort(), 15_000)
+    request = { kind: 'pending', scope: request.scope, controller: new AbortController() }
+    unlinkRequest.value = request
+    const controller = request.controller
+    const timeout = globalThis.setTimeout(() => controller.abort(), 15_000)
     try {
-      await host.patch(`/api/extensions/streams/${streamId}`, { extensionKey: extension.key, enabled: streamEnabled, config: parsed.data }, { signal: request.controller.signal, headers: { 'accept-language': locale.value } })
+      await host.patch(`/api/extensions/streams/${streamId}`, { extensionKey: extension.key, enabled: streamEnabled, config: parsed.data }, { signal: controller.signal, headers: { 'accept-language': locale.value } })
     } finally { globalThis.clearTimeout(timeout) }
     if (request.scope !== scopeSession || unlinkRequest.value !== request) return
     config.value = parsed.data
@@ -248,14 +245,14 @@ const unlink = async (notifier: Notifier) => {
     const parsed = apiFailure(error)
     const message = parsed?.details?.find(detail => detail.message)?.message ?? parsed?.message
     toast.add({ title: () => h('span', t('unlinkFailed')), description: message ?? (() => h('span', t('unlinkFailed'))), color: 'error' })
-  } finally { if (unlinkRequest.value === request) unlinkRequest.value = null }
+  } finally { if (unlinkRequest.value === request) unlinkRequest.value = { kind: 'idle' } }
 }
 watch(() => [streamId, extension.key, streamEnabled], () => {
-  scopeSession += 1; unlinkRequest.value?.controller?.abort(); unlinkRequest.value = null; closeEditor(); notifiers.value = []; templateCache.value = []; loading.value = false; loadFailed.value = false; search.value = ''; pagination.value.pageIndex = 0
+  scopeSession += 1; if (unlinkRequest.value.kind === 'pending') unlinkRequest.value.controller.abort(); unlinkRequest.value = { kind: 'idle' }; closeEditor(); templateCache.value = []; catalogRequest.reset(); search.value = ''; pagination.value.pageIndex = 0
   void loadCatalog()
-}, { immediate: true })
+}, { immediate: true, flush: 'sync' })
 watch(search, () => { pagination.value.pageIndex = 0 })
-onBeforeUnmount(() => { scopeSession += 1; unlinkRequest.value?.controller?.abort(); unlinkRequest.value = null; closeEditor() })
+onBeforeUnmount(() => { catalogRequest.reset(); scopeSession += 1; if (unlinkRequest.value.kind === 'pending') unlinkRequest.value.controller.abort(); unlinkRequest.value = { kind: 'idle' }; closeEditor() })
 </script>
 
 <template>
@@ -274,7 +271,7 @@ onBeforeUnmount(() => { scopeSession += 1; unlinkRequest.value?.controller?.abor
       </div>
     </template>
   </ExtensionResourceLayout>
-  <ExtensionModal :open="editing !== null" :title="editing ? t('editNotifier', { notifier: editing.notifier.name[locale] }) : t('editMapping')" :description="t('chooseTemplateHelp')" :dismissible="!saving" :close="saving ? false : undefined" :ui="{ content: 'sm:max-w-4xl', body: 'max-h-[min(60vh,32rem)] overflow-y-auto' }" @update:open="(value: boolean) => value ? undefined : closeEditor()">
+  <ExtensionModal :open="editing !== null" :title="editing ? t('editNotifier', { notifier: editing.notifier.name[locale] }) : t('editMapping')" :description="t('chooseTemplateHelp')" :dismissible="!saving" :close="saving ? false : undefined" :ui="{ content: 'sm:max-w-4xl', body: 'max-h-[min(60vh,32rem)] overflow-y-auto' }" @update:open="(value: boolean) => value ? undefined : requestCloseEditor()">
     <template #body>
       <div v-if="editing" ref="mappingFields" class="space-y-3" data-field-scope="extension.gcs-ssc-gcnotify.stream-mapping-modal">
         <ExtensionAlert v-if="templateFailure" color="error" :title="t('templateLoadFailed')" :description="templateFailureMessage">
@@ -305,7 +302,7 @@ onBeforeUnmount(() => { scopeSession += 1; unlinkRequest.value?.controller?.abor
     </template>
     <template #footer>
       <div class="flex w-full flex-wrap justify-end gap-3">
-        <ExtensionButton color="neutral" variant="ghost" :label="t('cancel')" :disabled="saving" @click="closeEditor" />
+        <ExtensionButton color="neutral" variant="ghost" :label="t('cancel')" :disabled="saving" @click="requestCloseEditor" />
         <ExtensionSaveButton :label="t('save')" type="button" :loading="saving" :disabled="!canSave" @click="save" />
       </div>
     </template>

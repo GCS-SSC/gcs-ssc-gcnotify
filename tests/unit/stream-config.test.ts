@@ -292,6 +292,8 @@ describe('Stream notifier table and lazy mapping modal', () => {
     expect(wrapper.find('[aria-label="Unlink template from Approval required"]').attributes('disabled')).toBeDefined()
     expect(wrapper.findComponent(ExtensionModal).vm.$attrs.close).toBe(false); expect(wrapper.find('[aria-label="Close"]').exists()).toBe(false)
     expect(wrapper.findAll('button').find(button => button.text() === 'Cancel')?.element.disabled).toBe(true)
+    wrapper.findComponent(ExtensionModal).vm.$emit('update:open', false); await flushPromises()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
     await wrapper.setProps({ streamId: '119', modelValue: {} }); await flushPromises(); await edit(wrapper, 'Other host event')
     complete(json({})); await flushPromises()
     expect(wrapper.find('[role="dialog"]').attributes('aria-label')).toBe('Edit mapping for Other host event'); expect(wrapper.find('[role="dialog"]').exists()).toBe(true)

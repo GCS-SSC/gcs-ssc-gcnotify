@@ -76,6 +76,18 @@ describe('Agency key-only configuration', () => {
     expect(wrapper.text()).toContain('No API key is configured.'); expect(wrapper.find('button').element.disabled).toBe(true)
     wrapper.unmount()
   })
+  it('does not let an older key summary overwrite a successful replacement save', async () => {
+    let completeSummary: (value: Response) => void = () => undefined
+    fetcher.mockImplementationOnce(() => new Promise<Response>(resolve => { completeSummary = resolve }))
+    const wrapper = render()
+    await wrapper.find('input').setValue('synthetic-key')
+    await wrapper.find('button').trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('An API key is configured.')
+    completeSummary(json({ configured: false })); await flushPromises()
+    expect(wrapper.text()).toContain('An API key is configured.')
+    expect(wrapper.find('input').element.value).toBe('')
+    wrapper.unmount()
+  })
   it('disables unsaved or disabled Agency configuration without demanding a replacement key', async () => {
     const wrapper = render(); await wrapper.setProps({ persistedConfig: undefined, enabled: false }); await flushPromises()
     expect(wrapper.text()).toContain('Enable and save'); expect(wrapper.find('button').element.disabled).toBe(true)
