@@ -258,7 +258,7 @@ onBeforeUnmount(() => { catalogRequest.reset(); scopeSession += 1; if (unlinkReq
 <template>
   <ExtensionAlert v-if="!storedConfig.success" role="alert" color="error" :title="t('invalid')" />
   <ExtensionAlert v-if="!streamEnabled" color="warning" :title="t('streamDisabled')" />
-  <ExtensionResourceLayout layout="page" data-field-scope="extension.gcs-ssc-gcnotify.stream-config" data-field-container="Search and pagination are optional local notifier-list filters, not persisted configuration." v-model:search="search" v-model:pagination="pagination" :data="visibleRows" :columns="columns" :total-records="filteredRows.length" :loading="loading" :request-status="loading ? 'pending' : loadFailed && !notifiers.length ? 'error' : 'success'" :show-button="false" @retry="loadCatalog">
+  <ExtensionResourceLayout table-id="extensions.gcs-ssc-gcnotify.stream-gc-notify-config" layout="page" data-field-scope="extension.gcs-ssc-gcnotify.stream-config" data-field-container="Search and pagination are optional local notifier-list filters, not persisted configuration." v-model:search="search" v-model:pagination="pagination" :data="visibleRows" :columns="columns" :total-records="filteredRows.length" :loading="loading" :request-status="loading ? 'pending' : loadFailed && !notifiers.length ? 'error' : 'success'" :show-button="false" @retry="loadCatalog">
     <template #name-cell="{ row }">
       <div class="font-medium text-highlighted">{{ row.original.name[locale] }}</div>
       <div class="text-xs text-muted">{{ row.original.id }}</div>
